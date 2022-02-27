@@ -1,0 +1,356 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>NetCoreFilterSample</name>
+    </assembly>
+    <members>
+        <member name="M:NetCoreFilterSample.Controllers.ActionSampleController.Get01">
+            <summary>
+            获取天气（同步验证IActionFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ActionSampleController.Get02">
+            <summary>
+            获取天气（异步验证IAsyncActionFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ActionSampleController.Get03">
+            <summary>
+            获取天气（异步验证ActionFilterAttribute）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:NetCoreFilterSample.Controllers.AuthorizationSampleController">
+            <summary>
+            授权过滤器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.AuthorizationSampleController.Get01">
+            <summary>
+            获取天气（同步验证IAuthorizationFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.AuthorizationSampleController.Get02">
+            <summary>
+            获取天气（异步验证IAsyncAuthorizationFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.AuthorizationSampleController.Get03">
+            <summary>
+            获取天气（异步验证AuthorizeFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:NetCoreFilterSample.Controllers.ExceptionSampleController">
+            <summary>
+            异常过滤器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ExceptionSampleController.Get01">
+            <summary>
+            获取天气(同步方法，IExceptionFilter)
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ExceptionSampleController.Get02">
+            <summary>
+            获取天气(异步方法，IAsyncExceptionFilter)
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ExceptionSampleController.Get03">
+            <summary>
+            获取天气(异步方法，ExceptionFilterAttribute)
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:NetCoreFilterSample.Controllers.ResourceController">
+            <summary>
+            资源过滤器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResourceController.Get01">
+             <summary>
+            获取时间（同步验证IResourceFilter）
+             </summary>
+             <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResourceController.Get02(NetCoreFilterSample.Controllers.Get2Request)">
+            <summary>
+            根据ID获取指定信息（同步验证IResourceFilter）
+            </summary>
+            <param name="request"></param>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResourceController.Get03(NetCoreFilterSample.Controllers.Get2Request)">
+            <summary>
+            根据ID获取指定信息（异步验证IAsyncResourceFilter）
+            </summary>
+            <param name="request"></param>
+            <returns></returns>
+        </member>
+        <member name="P:NetCoreFilterSample.Controllers.Get2Request.Id">
+            <summary>
+            标识
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Controllers.ResultController">
+            <summary>
+            结果过滤器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResultController.Get01">
+            <summary>
+            获取天气（同步验证IResultFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResultController.Get02">
+            <summary>
+            获取天气（异步验证IAsyncResultFilter）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.ResultController.Get03">
+            <summary>
+            获取天气（异步验证ResultFilterAttribute）
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:NetCoreFilterSample.Controllers.WeatherForecastController">
+            <summary>
+            天气控制器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.Get(System.Boolean)">
+            <summary>
+            获取天气
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.GetPatientName(System.Int32)">
+            <summary>
+            获取患者信息返回类
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.AddPatientEat(NetCoreFilterSample.Model.AddPatientEatRequest)">
+            <summary>
+            患者吃饭请求类
+            </summary>
+            <param name="request"></param>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.GetPatientList">
+            <summary>
+            获取患者信息列表
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.GetPatient">
+            <summary>
+            获取患者信息列表
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.ModelValidationFilter">
+            <summary>
+            对模型验证过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.RequestParamRecordFilter">
+            <summary>
+            日志记录
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.IdempotentAttributeFilter">
+            <summary>
+            接口幂等性处理
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.RequestLimitFilter">
+            <summary>
+            根据ip接口请求限制
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.CustomFilter.RequestLimitFilter.#ctor(System.String,System.Int32,System.Int32)">
+            <summary>
+            请求限制属性
+            </summary>
+            <param name="name">key</param>
+            <param name="limitRequestNum">限制的次数</param>
+            <param name="seconds">限制时间</param>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.CustomExceptionFilter">
+            <summary>
+            自定义全局异常过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.CustomResultPackFilter">
+            <summary>
+            方案一：返回类处理(让返回结果外面包一层公共业务返回类)
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.CustomResultPack2Filter">
+            <summary>
+            方案二：返回类处理(让返回结果外面包一层公共业务返回类增加返回code和消息)
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.CustomFilter.CustomResultAnonymityFilter">
+            <summary>
+            返回结果匿名化
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Action_01Filter">
+            <summary>
+            同步Action过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Action_02Filter">
+            <summary>
+            异步Action过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Action_03Filter">
+            <summary>
+            Action过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Authorization_01Filter">
+            <summary>
+            权限控制过滤器
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Authorization_01AsyncFilter">
+            <summary>
+            异步方案
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Authonization_2Filter">
+            <summary>
+            授权过滤器02
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Exception_01Filter">
+            <summary>
+            异常过滤器(同步)
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Exception_02Filter">
+            <summary>
+            异常过滤器(异步)
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Exception_03Filter">
+            <summary>
+            异常过滤器(异步)
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Resource_01Filter">
+            <summary>
+            资源过滤器(同步)  在创建控制器实例之前被调用
+            </summary>
+        </member>
+        <member name="F:NetCoreFilterSample.Filter.Resource_01Filter._dictionaryCache">
+            <summary>
+            模拟数据源
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Filter.Resource_01Filter.OnResourceExecuting(Microsoft.AspNetCore.Mvc.Filters.ResourceExecutingContext)">
+            <summary>
+            在接口被调用前触发
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="M:NetCoreFilterSample.Filter.Resource_01Filter.OnResourceExecuted(Microsoft.AspNetCore.Mvc.Filters.ResourceExecutedContext)">
+            <summary>
+            在接口调用结束时候触发
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Resource_02Filter">
+            <summary>
+            资源过滤器(异步)  在创建控制器实例之前被调用
+            </summary>
+        </member>
+        <member name="F:NetCoreFilterSample.Filter.Resource_02Filter._dictionaryCache">
+            <summary>
+            模拟数据源
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Result_01Filter">
+            <summary>
+            返回过滤器
+            </summary>
+        </member>
+        <member name="M:NetCoreFilterSample.Filter.Result_01Filter.OnResultExecuting(Microsoft.AspNetCore.Mvc.Filters.ResultExecutingContext)">
+            <summary>
+            在result执行前发生(在view 呈现前)，使用场景：设置客户端缓存，服务器端压缩
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="M:NetCoreFilterSample.Filter.Result_01Filter.OnResultExecuted(Microsoft.AspNetCore.Mvc.Filters.ResultExecutedContext)">
+            <summary>
+            渲染视图后执行,当Action完成后
+            </summary>
+            <param name="context"></param>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Result_02Filter">
+             <summary>
+            异步方法
+             </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Filter.Result_03Filter">
+            <summary>
+            异步方法
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.GlobalConst">
+            <summary>
+            全局配置
+            如果考虑到domain层去适配不同的应用层,则全局配置应该放在应用层
+            否则全局配置可以放在领域层
+            </summary>
+        </member>
+        <member name="F:NetCoreFilterSample.GlobalConst.DefaultDateTimeFormat">
+            <summary>
+                系统默认时间展示格式，1970-01-01 01:01:01
+                这是整个系统默认配置的格式，任何其他单独业务的时间格式都不要配置在这个类中
+            </summary>
+        </member>
+        <member name="F:NetCoreFilterSample.GlobalConst.Null">
+            <summary>
+            默认null
+            </summary>
+        </member>
+        <member name="F:NetCoreFilterSample.GlobalConst.DefaultResponseJsonSerializerSettings">
+            <summary>
+            默认响应的json序列化方式
+            </summary>
+        </member>
+        <member name="T:NetCoreFilterSample.Model.AddPatientEatRequest">
+            <summary>
+            添加患者吃饭请求类
+            </summary>
+        </member>
+        <member name="P:NetCoreFilterSample.Model.AddPatientEatRequest.PatientId">
+            <summary>
+            患者ID
+            </summary>
+        </member>
+        <member name="P:NetCoreFilterSample.Model.AddPatientEatRequest.Eat">
+            <summary>
+            饭
+            </summary>
+        </member>
+        <member name="T:NetCoreFilter.Filter.AllowAnonymousAttribute">
+            <summary>
+            允许所有访问特性
+            </summary>
+        </member>
+    </members>
+</doc>
