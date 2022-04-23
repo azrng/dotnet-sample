@@ -1,0 +1,31 @@
+﻿@using System
+@using RazorEngineConsoleApp.Common
+using System;
+
+namespace RazorEngineConsoleApp
+{
+    /// <summary>
+    /// @Model.Desc
+    ///</summary>
+    public class @ModelHelper.FirstToUp(Model.TableName)
+    {
+        @foreach (var pm in  Model.Parameters)
+        {
+            @:/// <summary>
+            @:/// @Raw(pm.Desc)
+            @:/// <summary>
+            @:private @pm.ParamType @ModelHelper.FirstToLow(pm.ParamName);
+            @:
+        }
+
+        @foreach (var pm in  Model.Parameters)
+        {
+            @:public @pm.ParamType @ModelHelper.FirstToUp(pm.ParamName)
+            @:{
+            @:  get { return @ModelHelper.FirstToLow(pm.ParamName); }
+            @:  set { @ModelHelper.FirstToLow(pm.ParamName) = value; }
+            @:}
+            @:
+        }
+    }
+}

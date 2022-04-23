@@ -1,0 +1,18 @@
+﻿<div>
+    <table border="1" style="border:1px solid black;text-align:center" cellpadding="1" cellspacing="1">
+        <tr>
+            <th colspan="2">@Model.UserName</th>
+        </tr>
+        <tr>
+            <td>科目</td>
+            <td>成绩</td>
+        </tr>
+        @foreach (var item in Model.SubjectList)
+        {
+            <tr>
+                <td>@item.SubjectName</td>
+                <td>@item.Grade</td>
+            </tr>
+        }
+    </table>
+</div>
