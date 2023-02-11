@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <None Remove="wwwroot\index.html" />
+      <None Remove="wwwroot\layer.js" />
+      <None Remove="wwwroot\theme\default\icon-ext.png" />
+      <None Remove="wwwroot\theme\default\icon.png" />
+      <None Remove="wwwroot\theme\default\layer.css" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="wwwroot\index.html" />
+      <EmbeddedResource Include="wwwroot\layer.js" />
+      <EmbeddedResource Include="wwwroot\theme\default\icon-ext.png" />
+      <EmbeddedResource Include="wwwroot\theme\default\icon.png" />
+      <EmbeddedResource Include="wwwroot\theme\default\layer.css" />
+    </ItemGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+      <PackageReference Include="AzrngCommon.Core" Version="1.0.0" />
+        <PackageReference Include="Dapper" Version="2.0.123" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+        <PackageReference Include="Npgsql" Version="7.0.1" />
+    </ItemGroup>
+   
+</Project>
