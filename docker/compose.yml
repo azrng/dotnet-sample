@@ -1,0 +1,23 @@
+services:
+  duckdb:
+    # DuckDB database with Quack extension.
+    # Connection string:
+    #   Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true
+    image: registry.cn-hangzhou.aliyuncs.com/zrng/duckdb-quack:1.5.3.1
+    container_name: duckdb
+    ports:
+      - "9494:9494"
+    environment:
+      - DUCKDB_PORT=9494
+      - DUCKDB_TOKEN=E7231CE2CE78902BA280F3B9158BEB30
+      - TZ=Asia/Shanghai
+    cpus: "2.0"
+    mem_limit: 4g
+    memswap_limit: 4g
+    restart: unless-stopped
+    networks:
+      - my-bridge
+
+networks:
+  my-bridge:
+    driver: bridge
