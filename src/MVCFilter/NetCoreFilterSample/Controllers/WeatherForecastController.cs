@@ -6,7 +6,7 @@ using Newtonsoft.Json;
 namespace NetCoreFilterSample.Controllers;
 
 /// <summary>
-/// ÌìÆø¿ØÖÆÆ÷
+/// å¤©æ°”é¢„æŠ¥æ§åˆ¶å™¨
 /// </summary>
 [ApiController]
 [Route("api/[controller]/[action]")]
@@ -22,7 +22,7 @@ public class WeatherForecastController : ControllerBase
     }
 
     /// <summary>
-    /// »ñÈ¡ÌìÆø
+    /// è·å–æ•°æ®
     /// </summary>
     /// <returns></returns>
     [HttpGet]
@@ -36,18 +36,18 @@ public class WeatherForecastController : ControllerBase
     }
 
     /// <summary>
-    /// »ñÈ¡»¼ÕßĞÅÏ¢·µ»ØÀà
+    /// è·å–æ‚£è€…ä¿¡æ¯ï¼ˆæµ‹è¯•ï¼‰
     /// </summary>
     /// <returns></returns>
     [HttpGet]
     [RequestLimitFilter("getinfo", 5, 10)]
     public string GetPatientName(int patientId)
     {
-        return "ÕÅÈı" + patientId;
+        return "æ‚£è€…" + patientId;
     }
 
     /// <summary>
-    /// »¼Õß³Ô·¹ÇëÇóÀà
+    /// æ‚£è€…é¥®é£Ÿæ·»åŠ 
     /// </summary>
     /// <param name="request"></param>
     /// <returns></returns>
@@ -58,7 +58,7 @@ public class WeatherForecastController : ControllerBase
     }
 
     /// <summary>
-    /// »ñÈ¡»¼ÕßĞÅÏ¢ÁĞ±í
+    /// è·å–æ‚£è€…ä¿¡æ¯åˆ—è¡¨
     /// </summary>
     /// <returns></returns>
     [HttpGet]
@@ -68,7 +68,7 @@ public class WeatherForecastController : ControllerBase
     }
 
     /// <summary>
-    /// »ñÈ¡»¼ÕßĞÅÏ¢ÁĞ±í
+    /// è·å–æ‚£è€…ä¿¡æ¯è¯¦æƒ…
     /// </summary>
     /// <returns></returns>
     [HttpGet]

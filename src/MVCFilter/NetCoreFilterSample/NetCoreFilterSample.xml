@@ -123,24 +123,24 @@
         </member>
         <member name="T:NetCoreFilterSample.Controllers.WeatherForecastController">
             <summary>
-            天气控制器
+            天气预报控制器
             </summary>
         </member>
         <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.Get(System.Boolean)">
             <summary>
-            获取天气
+            获取数据
             </summary>
             <returns></returns>
         </member>
         <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.GetPatientName(System.Int32)">
             <summary>
-            获取患者信息返回类
+            获取患者信息（测试）
             </summary>
             <returns></returns>
         </member>
         <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.AddPatientEat(NetCoreFilterSample.Model.AddPatientEatRequest)">
             <summary>
-            患者吃饭请求类
+            患者饮食添加
             </summary>
             <param name="request"></param>
             <returns></returns>
@@ -153,7 +153,7 @@
         </member>
         <member name="M:NetCoreFilterSample.Controllers.WeatherForecastController.GetPatient">
             <summary>
-            获取患者信息列表
+            获取患者信息详情
             </summary>
             <returns></returns>
         </member>
