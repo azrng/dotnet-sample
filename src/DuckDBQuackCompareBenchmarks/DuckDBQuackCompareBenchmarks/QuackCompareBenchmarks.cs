@@ -159,6 +159,72 @@ public class ResultSetBench : IAsyncDisposable
 
 [MemoryDiagnoser]
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+public class ReaderAccessBench : IAsyncDisposable
+{
+    private AzrngQuackConnection _connection = null!;
+    private object[] _values = [];
+
+    [Params(10000, 100000)]
+    public int Rows { get; set; }
+
+    [GlobalSetup]
+    public async Task Setup()
+    {
+        _connection = new AzrngQuackConnection(Program.ConnectionString);
+        await _connection.OpenAsync();
+        _values = new object[4];
+    }
+
+    [Benchmark(Description = "Azrng reader typed getters")]
+    public async Task Azrng_TypedGetters()
+    {
+        await using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT i, CAST(i AS VARCHAR), i % 2 = 0, i * 1.25 FROM range(0, {Rows}) t(i)";
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            _ = reader.GetInt64(0);
+            _ = reader.GetString(1);
+            _ = reader.GetBoolean(2);
+            _ = reader.GetDouble(3);
+        }
+    }
+
+    [Benchmark(Description = "Azrng reader GetValue")]
+    public async Task Azrng_GetValue()
+    {
+        await using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT i, CAST(i AS VARCHAR), i % 2 = 0, i * 1.25 FROM range(0, {Rows}) t(i)";
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            _ = reader.GetValue(0);
+            _ = reader.GetValue(1);
+            _ = reader.GetValue(2);
+            _ = reader.GetValue(3);
+        }
+    }
+
+    [Benchmark(Description = "Azrng reader GetValues")]
+    public async Task Azrng_GetValues()
+    {
+        await using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT i, CAST(i AS VARCHAR), i % 2 = 0, i * 1.25 FROM range(0, {Rows}) t(i)";
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            _ = reader.GetValues(_values);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _connection.DisposeAsync();
+    }
+}
+
+[MemoryDiagnoser]
+[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
 public class ConcurrencyBench : IAsyncDisposable
 {
     private LocalQuackConnection[] _localConnections = [];
@@ -260,6 +326,12 @@ public class PoolBench : IAsyncDisposable
         _pool.ReturnConnection(connection);
     }
 
+    [Benchmark(Description = "Azrng pool rent + dispose")]
+    public async Task AzrngPool_RentDispose()
+    {
+        await using var lease = await _pool.RentConnectionAsync();
+    }
+
     [Benchmark(Description = "Azrng pool SELECT 1")]
     public async Task AzrngPool_Select1()
     {
@@ -275,6 +347,16 @@ public class PoolBench : IAsyncDisposable
         {
             _pool.ReturnConnection(connection);
         }
+    }
+
+    [Benchmark(Description = "Azrng pool lease SELECT 1")]
+    public async Task AzrngPool_LeaseSelect1()
+    {
+        await using var lease = await _pool.RentConnectionAsync();
+        await using var command = lease.Connection.CreateCommand();
+        command.CommandText = "SELECT 1";
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
     }
 
     [Benchmark(Description = "Azrng pool parallel SELECT 1")]
@@ -303,6 +385,25 @@ public class PoolBench : IAsyncDisposable
         await Task.WhenAll(tasks);
     }
 
+    [Benchmark(Description = "Azrng pool lease parallel SELECT 1")]
+    public async Task AzrngPool_LeaseParallelSelect1()
+    {
+        var tasks = new Task[Degree];
+        for (var i = 0; i < Degree; i++)
+        {
+            tasks[i] = Task.Run(async () =>
+            {
+                await using var lease = await _pool.RentConnectionAsync();
+                await using var command = lease.Connection.CreateCommand();
+                command.CommandText = "SELECT 1";
+                await using var reader = await command.ExecuteReaderAsync();
+                await reader.ReadAsync();
+            });
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _pool.DisposeAsync();
@@ -320,6 +421,9 @@ public class InsertBench : IAsyncDisposable
 
     [Params(100, 1000)]
     public int Rows { get; set; }
+
+    [Params(100, 500)]
+    public int BatchSize { get; set; }
 
     [GlobalSetup]
     public async Task Setup()
@@ -354,13 +458,26 @@ public class InsertBench : IAsyncDisposable
         }
     }
 
-    [Benchmark(Description = "Azrng batch insert")]
+    [Benchmark(Description = "Azrng batch insert all rows")]
     public async Task Azrng_BatchInsert()
     {
         await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
         var rows = Enumerable.Range(0, Rows)
             .Select(i => new object?[] { i, $"row{i}" });
         await _azrngConnection.ExecuteBatchInsertAsync(_azrngTable, new[] { "id", "label" }, rows);
+    }
+
+    [Benchmark(Description = "Azrng paged batch insert")]
+    public async Task Azrng_PagedBatchInsert()
+    {
+        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
+        var rows = Enumerable.Range(0, Rows)
+            .Select(i => new object?[] { i, $"row{i}" });
+        await _azrngConnection.ExecuteParameterizedBatchInsertAsync(
+            _azrngTable,
+            new[] { "id", "label" },
+            rows,
+            BatchSize);
     }
 
     [GlobalCleanup]

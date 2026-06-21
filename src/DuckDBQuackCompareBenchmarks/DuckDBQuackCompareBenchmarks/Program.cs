@@ -16,6 +16,11 @@ internal static class Program
     {
         Console.WriteLine($"Benchmark target: {ConnectionString}");
         SmokeChecks.RunAsync().GetAwaiter().GetResult();
+        if (args.Any(static arg => string.Equals(arg, "--smoke-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine("Smoke checks passed.");
+            return;
+        }
 
         var config = ManualConfig.CreateMinimumViable()
             .AddLogger(BenchmarkDotNet.Loggers.ConsoleLogger.Default)
@@ -29,6 +34,7 @@ internal static class Program
             typeof(ConnectionBench),
             typeof(QueryBench),
             typeof(ResultSetBench),
+            typeof(ReaderAccessBench),
             typeof(ConcurrencyBench),
             typeof(PoolBench),
             typeof(InsertBench),
