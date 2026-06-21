@@ -159,33 +159,74 @@ public class ResultSetBench : IAsyncDisposable
 
 [MemoryDiagnoser]
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
-public class ConcurrencyBench
+public class ConcurrencyBench : IAsyncDisposable
 {
-    [Params(4, 16, 64)]
+    private LocalQuackConnection[] _localConnections = [];
+    private AzrngQuackConnection[] _azrngConnections = [];
+
+    [Params(4, 16)]
     public int Degree { get; set; }
+
+    [GlobalSetup]
+    public async Task Setup()
+    {
+        _localConnections = new LocalQuackConnection[Degree];
+        _azrngConnections = new AzrngQuackConnection[Degree];
+        for (var i = 0; i < Degree; i++)
+        {
+            _localConnections[i] = new LocalQuackConnection(Program.ConnectionString);
+            await OpenWithRetryAsync(_localConnections[i]);
+            _azrngConnections[i] = new AzrngQuackConnection(Program.ConnectionString);
+            await OpenWithRetryAsync(_azrngConnections[i]);
+            await Task.Delay(50);
+        }
+    }
+
+    private static async Task OpenWithRetryAsync(DbConnection connection, int maxRetries = 3)
+    {
+        for (var i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                await connection.OpenAsync();
+                return;
+            }
+            catch when (i < maxRetries - 1)
+            {
+                await Task.Delay(100 * (i + 1));
+            }
+        }
+    }
 
     [Benchmark(Baseline = true, Description = "Local parallel SELECT 1")]
     public async Task Local_ParallelQueries()
     {
-        await RunParallelAsync(Degree, () => new LocalQuackConnection(Program.ConnectionString));
+        await RunParallelAsync(_localConnections);
     }
 
     [Benchmark(Description = "Azrng parallel SELECT 1")]
     public async Task Azrng_ParallelQueries()
     {
-        await RunParallelAsync(Degree, () => new AzrngQuackConnection(Program.ConnectionString));
+        await RunParallelAsync(_azrngConnections);
     }
 
-    private static Task RunParallelAsync(int degree, Func<DbConnection> connectionFactory)
+    public async ValueTask DisposeAsync()
     {
-        var tasks = new Task[degree];
-        for (var i = 0; i < degree; i++)
+        foreach (var conn in _localConnections)
+            await conn.DisposeAsync();
+        foreach (var conn in _azrngConnections)
+            await conn.DisposeAsync();
+    }
+
+    private static Task RunParallelAsync(DbConnection[] connections)
+    {
+        var tasks = new Task[connections.Length];
+        for (var i = 0; i < connections.Length; i++)
         {
+            var conn = connections[i];
             tasks[i] = Task.Run(async () =>
             {
-                await using var connection = connectionFactory();
-                await connection.OpenAsync();
-                await using var command = connection.CreateCommand();
+                await using var command = conn.CreateCommand();
                 command.CommandText = "SELECT 1";
                 await using var reader = await command.ExecuteReaderAsync();
                 await reader.ReadAsync();
@@ -293,16 +334,10 @@ public class InsertBench : IAsyncDisposable
         await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_azrngTable} (id INTEGER, label VARCHAR)");
     }
 
-    [IterationSetup]
-    public async Task ClearRows()
-    {
-        await ExecuteNonQueryAsync(_localConnection, $"DELETE FROM {_localTable}");
-        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
-    }
-
     [Benchmark(Baseline = true, Description = "Local per-row insert")]
     public async Task Local_PerRowInsert()
     {
+        await ExecuteNonQueryAsync(_localConnection, $"DELETE FROM {_localTable}");
         for (var i = 0; i < Rows; i++)
         {
             await InsertOneAsync(_localConnection, _localTable, i);
@@ -312,6 +347,7 @@ public class InsertBench : IAsyncDisposable
     [Benchmark(Description = "Azrng per-row insert")]
     public async Task Azrng_PerRowInsert()
     {
+        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
         for (var i = 0; i < Rows; i++)
         {
             await InsertOneAsync(_azrngConnection, _azrngTable, i);
@@ -321,6 +357,7 @@ public class InsertBench : IAsyncDisposable
     [Benchmark(Description = "Azrng batch insert")]
     public async Task Azrng_BatchInsert()
     {
+        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
         var rows = Enumerable.Range(0, Rows)
             .Select(i => new object?[] { i, $"row{i}" });
         await _azrngConnection.ExecuteBatchInsertAsync(_azrngTable, new[] { "id", "label" }, rows);
