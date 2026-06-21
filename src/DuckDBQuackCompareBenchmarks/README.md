@@ -34,11 +34,19 @@ On Windows PowerShell:
 $env:QUACK_PROTOCOL_CONNECTION_STRING = "Host=localhost;Port=9494;Token=YOUR_TOKEN;DisableSsl=true"
 ```
 
+## Pre-download Extensions (Optional)
+
+DuckDB extensions are downloaded automatically from the official repository on first use. To pre-download them:
+
+```bash
+dotnet run --project src/DuckDBQuackCompareBenchmarks/DuckDBExtensionDownloader/DuckDBExtensionDownloader.csproj
+```
+
 ## Run
 
 ```bash
-dotnet restore src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.sln
-dotnet build src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.sln -c Release
+dotnet restore src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.slnx
+dotnet build src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.slnx -c Release
 dotnet run -c Release --project src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.csproj
 ```
 

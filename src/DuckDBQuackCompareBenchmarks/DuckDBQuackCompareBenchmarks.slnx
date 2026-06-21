@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DuckDBQuackCompareBenchmarks\DuckDBQuackCompareBenchmarks.csproj" />
+  <Project Path="DuckDBExtensionDownloader\DuckDBExtensionDownloader.csproj" />
+</Solution>

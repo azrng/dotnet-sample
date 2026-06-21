@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Dapper;
 using DuckDB.NET.Data;
@@ -12,10 +11,6 @@ namespace Quack.DuckDB;
 /// </summary>
 public sealed class QuackDataProvider : IDisposable
 {
-    private const string ExtensionVersion = "v1.5.3";
-    private const string HttpfsExtensionFileName = "httpfs.duckdb_extension";
-    private const string QuackExtensionFileName = "quack.duckdb_extension";
-
     private readonly DuckDBConnection _connection;
     private readonly string _uri;
     private readonly string _token;
@@ -65,8 +60,8 @@ public sealed class QuackDataProvider : IDisposable
         _connection = new DuckDBConnection("Data Source=:memory:");
         _connection.Open();
 
-        LoadExtension(GetExtensionPath(HttpfsExtensionFileName));
-        LoadExtension(GetExtensionPath(QuackExtensionFileName));
+        LoadExtension("httpfs");
+        LoadExtension("quack");
     }
 
     /// <summary>
@@ -415,60 +410,13 @@ public sealed class QuackDataProvider : IDisposable
         return results;
     }
 
-    private void LoadExtension(string extensionPath)
+    private void LoadExtension(string extensionName)
     {
         var initSql = $@"
-            FORCE INSTALL '{extensionPath}';
-            LOAD '{extensionPath}';
+            INSTALL {extensionName};
+            LOAD {extensionName};
         ";
         Execute(initSql);
-    }
-
-    private string GetExtensionPath(string extensionFileName)
-    {
-        // NuGet 输出目录和源码调试目录结构不同，两类路径都需要尝试探测。
-        foreach (var rootFolder in new[] { "extensions", "Extensions" })
-        {
-            var relativePath = Path.Combine(rootFolder, ExtensionVersion, GetPlatformFolder(), extensionFileName);
-            var outputPath = Path.Combine(AppContext.BaseDirectory, relativePath);
-            if (File.Exists(outputPath))
-                return NormalizeExtensionPath(outputPath);
-
-            var sourcePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", relativePath));
-            if (File.Exists(sourcePath))
-                return NormalizeExtensionPath(sourcePath);
-        }
-
-        throw new FileNotFoundException("Quack DuckDB 扩展文件未找到", extensionFileName);
-    }
-
-    private static string NormalizeExtensionPath(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        if (!File.Exists(fullPath))
-            throw new FileNotFoundException("Quack DuckDB 扩展文件未找到", fullPath);
-
-        return fullPath.Replace("\\", "/").Replace("'", "''");
-    }
-
-    private static string GetPlatformFolder()
-    {
-        var architecture = RuntimeInformation.ProcessArchitecture switch
-        {
-            Architecture.Arm64 => "arm64",
-            _ => "amd64"
-        };
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return $"windows_{architecture}";
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            return $"linux_{architecture}";
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return $"osx_{architecture}";
-
-        throw new PlatformNotSupportedException("不支持的平台");
     }
 
     private static string EscapeSqlLiteral(string value)
