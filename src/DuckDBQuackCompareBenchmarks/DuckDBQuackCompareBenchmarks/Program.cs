@@ -12,6 +12,8 @@ internal static class Program
         Environment.GetEnvironmentVariable("QUACK_PROTOCOL_CONNECTION_STRING")
         ?? "Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true";
 
+    public static readonly string LocalAttachConnectionString = ConnectionString + ";Attach=true";
+
     private static void Main(string[] args)
     {
         Console.WriteLine($"Benchmark target: {ConnectionString}");
@@ -33,6 +35,7 @@ internal static class Program
         {
             typeof(ConnectionBench),
             typeof(QueryBench),
+            typeof(QueryBenchQuack),
             typeof(ResultSetBench),
             typeof(ReaderAccessBench),
             typeof(ConcurrencyBench),

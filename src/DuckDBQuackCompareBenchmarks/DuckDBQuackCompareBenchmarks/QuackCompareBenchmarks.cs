@@ -35,7 +35,7 @@ public class QueryBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _localConnection = new LocalQuackConnection(Program.ConnectionString);
+        _localConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
         await _localConnection.OpenAsync();
         _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
         await _azrngConnection.OpenAsync();
@@ -56,7 +56,16 @@ public class QueryBench : IAsyncDisposable
     [Benchmark(Description = "Local SELECT @a + @b")]
     public async Task Local_ParameterizedSelect()
     {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
+        await using var command = _localConnection.CreateCommand();
+        command.CommandText = "SELECT ? + ?";
+        var p1 = command.CreateParameter();
+        p1.Value = 17L;
+        command.Parameters.Add(p1);
+        var p2 = command.CreateParameter();
+        p2.Value = 25L;
+        command.Parameters.Add(p2);
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
     }
 
     [Benchmark(Description = "Azrng SELECT @a + @b")]
@@ -66,6 +75,88 @@ public class QueryBench : IAsyncDisposable
     }
 
     [Benchmark(Description = "Local COUNT/SUM over 10k")]
+    public async Task Local_Aggregate10k()
+    {
+        await ExecuteReadFirstAsync(_localConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
+    }
+
+    [Benchmark(Description = "Azrng COUNT/SUM over 10k")]
+    public async Task Azrng_Aggregate10k()
+    {
+        await ExecuteReadFirstAsync(_azrngConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _localConnection.DisposeAsync();
+        await _azrngConnection.DisposeAsync();
+    }
+
+    private static async Task ExecuteReadFirstAsync(
+        DbConnection connection,
+        string sql,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        AddParameters(command, parameters);
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+    }
+
+    private static void AddParameters(DbCommand command, (string Name, object Value)[] parameters)
+    {
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+    }
+}
+
+[MemoryDiagnoser]
+[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
+public class QueryBenchQuack : IAsyncDisposable
+{
+    private LocalQuackConnection _localConnection = null!;
+    private AzrngQuackConnection _azrngConnection = null!;
+
+    [GlobalSetup]
+    public async Task Setup()
+    {
+        _localConnection = new LocalQuackConnection(Program.ConnectionString);
+        await _localConnection.OpenAsync();
+        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
+        await _azrngConnection.OpenAsync();
+    }
+
+    [Benchmark(Baseline = true, Description = "Local quack_query SELECT 1")]
+    public async Task Local_Select1()
+    {
+        await ExecuteReadFirstAsync(_localConnection, "SELECT 1");
+    }
+
+    [Benchmark(Description = "Azrng SELECT 1")]
+    public async Task Azrng_Select1()
+    {
+        await ExecuteReadFirstAsync(_azrngConnection, "SELECT 1");
+    }
+
+    [Benchmark(Description = "Local quack_query SELECT @a + @b")]
+    public async Task Local_ParameterizedSelect()
+    {
+        await ExecuteReadFirstAsync(_localConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
+    }
+
+    [Benchmark(Description = "Azrng SELECT @a + @b")]
+    public async Task Azrng_ParameterizedSelect()
+    {
+        await ExecuteReadFirstAsync(_azrngConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
+    }
+
+    [Benchmark(Description = "Local quack_query COUNT/SUM over 10k")]
     public async Task Local_Aggregate10k()
     {
         await ExecuteReadFirstAsync(_localConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");

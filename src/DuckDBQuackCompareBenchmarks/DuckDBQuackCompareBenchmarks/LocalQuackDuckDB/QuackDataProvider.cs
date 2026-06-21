@@ -43,6 +43,9 @@ public sealed class QuackDataProvider : IDisposable
     /// <param name="token">认证 token</param>
     /// <param name="catalog">远端服务端 catalog 名称；用于 ATTACH 模式的本地挂载名</param>
     /// <param name="disableSsl">是否禁用 SSL</param>
+    private static readonly HashSet<string> LoadedExtensions = new();
+    private static readonly object ExtensionLock = new();
+
     public QuackDataProvider(
         string host,
         int port,
@@ -412,11 +415,9 @@ public sealed class QuackDataProvider : IDisposable
 
     private void LoadExtension(string extensionName)
     {
-        var initSql = $@"
-            INSTALL {extensionName};
-            LOAD {extensionName};
-        ";
-        Execute(initSql);
+        // LOAD 会自动处理已安装的扩展，无需每次都执行 INSTALL
+        // 使用连接级别的 LOAD，因为每个连接都有独立的内存数据库
+        Execute($"LOAD {extensionName};");
     }
 
     private static string EscapeSqlLiteral(string value)
