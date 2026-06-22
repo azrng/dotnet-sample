@@ -50,7 +50,7 @@ internal static class SmokeChecks
         params (string Name, object? Value)[] parameters)
     {
         var localScalar = await ExecuteScalarAsync(
-            () => new LocalQuackConnection(Program.ConnectionString),
+            () => new LocalQuackConnection(Program.LocalQueryConnectionString),
             sql,
             parameters);
         var azrngScalar = await ExecuteScalarAsync(
@@ -63,7 +63,7 @@ internal static class SmokeChecks
 
     private static async Task EnsureRowsParityAsync(string sql)
     {
-        var localRows = await ExecuteRowsAsync(() => new LocalQuackConnection(Program.ConnectionString), sql);
+        var localRows = await ExecuteRowsAsync(() => new LocalQuackConnection(Program.LocalQueryConnectionString), sql);
         var azrngRows = await ExecuteRowsAsync(() => new AzrngQuackConnection(Program.ConnectionString), sql);
 
         if (localRows.Count != azrngRows.Count)

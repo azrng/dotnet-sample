@@ -10,10 +10,17 @@ namespace DuckDBQuackCompareBenchmarks;
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
 public class ConnectionBench
 {
-    [Benchmark(Baseline = true, Description = "Local Open+Dispose")]
-    public async Task Local_OpenDispose()
+    [Benchmark(Description = "Local ATTACH Open+Dispose")]
+    public async Task LocalAttach_OpenDispose()
     {
-        await using var connection = new LocalQuackConnection(Program.ConnectionString);
+        await using var connection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await connection.OpenAsync();
+    }
+
+    [Benchmark(Description = "Local quack_query Open+Dispose")]
+    public async Task LocalQuery_OpenDispose()
+    {
+        await using var connection = new LocalQuackConnection(Program.LocalQueryConnectionString);
         await connection.OpenAsync();
     }
 
@@ -29,67 +36,100 @@ public class ConnectionBench
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
 public class QueryBench : IAsyncDisposable
 {
-    private LocalQuackConnection _localConnection = null!;
+    private LocalQuackConnection _localAttachConnection = null!;
+    private LocalQuackConnection _localQueryConnection = null!;
     private AzrngQuackConnection _azrngConnection = null!;
+    private string _table = "";
+    private string _attachTable = "";
 
     [GlobalSetup]
     public async Task Setup()
     {
-        _localConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
-        await _localConnection.OpenAsync();
         _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
         await _azrngConnection.OpenAsync();
+        _table = "bench_query_" + Guid.NewGuid().ToString("N")[..12];
+        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
+        await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
+
+        _localAttachConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await _localAttachConnection.OpenAsync();
+        _localQueryConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
+        await _localQueryConnection.OpenAsync();
+
+        await ExecuteReadFirstAsync(_azrngConnection, BuildPointLookupSql(_table), ("@id", 42L));
+        await ExecuteReadFirstAsync(_localAttachConnection, BuildAttachPointLookupSql(_attachTable), ("", 42L));
+        await ExecuteReadFirstAsync(_localQueryConnection, BuildPointLookupSql(_table), ("@id", 42L));
     }
 
-    [Benchmark(Baseline = true, Description = "Local SELECT 1")]
-    public async Task Local_Select1()
+    [Benchmark(Description = "Azrng remote point lookup")]
+    public async Task Azrng_PointLookup()
     {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT 1");
+        await ExecuteReadFirstAsync(_azrngConnection, BuildPointLookupSql(_table), ("@id", 42L));
     }
 
-    [Benchmark(Description = "Azrng SELECT 1")]
-    public async Task Azrng_Select1()
+    [Benchmark(Baseline = true, Description = "Local ATTACH remote point lookup")]
+    public async Task LocalAttach_PointLookup()
     {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT 1");
+        await ExecuteReadFirstAsync(_localAttachConnection, BuildAttachPointLookupSql(_attachTable), ("", 42L));
     }
 
-    [Benchmark(Description = "Local SELECT @a + @b")]
-    public async Task Local_ParameterizedSelect()
+    [Benchmark(Description = "Local quack_query remote point lookup")]
+    public async Task LocalQuery_PointLookup()
     {
-        await using var command = _localConnection.CreateCommand();
-        command.CommandText = "SELECT ? + ?";
-        var p1 = command.CreateParameter();
-        p1.Value = 17L;
-        command.Parameters.Add(p1);
-        var p2 = command.CreateParameter();
-        p2.Value = 25L;
-        command.Parameters.Add(p2);
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
+        await ExecuteReadFirstAsync(_localQueryConnection, BuildPointLookupSql(_table), ("@id", 42L));
     }
 
-    [Benchmark(Description = "Azrng SELECT @a + @b")]
-    public async Task Azrng_ParameterizedSelect()
+    [Benchmark(Description = "Azrng remote parameterized aggregate")]
+    public async Task Azrng_ParameterizedAggregate()
     {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
+        await ExecuteReadFirstAsync(_azrngConnection, BuildParameterizedAggregateSql(_table), ("@start", 1000L), ("@end", 11000L));
     }
 
-    [Benchmark(Description = "Local COUNT/SUM over 10k")]
-    public async Task Local_Aggregate10k()
+    [Benchmark(Description = "Local ATTACH remote parameterized aggregate")]
+    public async Task LocalAttach_ParameterizedAggregate()
     {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
+        await ExecuteReadFirstAsync(_localAttachConnection, BuildAttachParameterizedAggregateSql(_attachTable), ("", 1000L), ("", 11000L));
     }
 
-    [Benchmark(Description = "Azrng COUNT/SUM over 10k")]
+    [Benchmark(Description = "Local quack_query remote parameterized aggregate")]
+    public async Task LocalQuery_ParameterizedAggregate()
+    {
+        await ExecuteReadFirstAsync(_localQueryConnection, BuildParameterizedAggregateSql(_table), ("@start", 1000L), ("@end", 11000L));
+    }
+
+    [Benchmark(Description = "Azrng remote aggregate 10k")]
     public async Task Azrng_Aggregate10k()
     {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
+        await ExecuteReadFirstAsync(_azrngConnection, BuildAggregateSql(_table));
+    }
+
+    [Benchmark(Description = "Local ATTACH remote aggregate 10k")]
+    public async Task LocalAttach_Aggregate10k()
+    {
+        await ExecuteReadFirstAsync(_localAttachConnection, BuildAggregateSql(_attachTable));
+    }
+
+    [Benchmark(Description = "Local quack_query remote aggregate 10k")]
+    public async Task LocalQuery_Aggregate10k()
+    {
+        await ExecuteReadFirstAsync(_localQueryConnection, BuildAggregateSql(_table));
+    }
+
+    [GlobalCleanup]
+    public async Task Cleanup()
+    {
+        if (_azrngConnection is not null && !string.IsNullOrWhiteSpace(_table))
+            await ExecuteNonQueryAsync(_azrngConnection, $"DROP TABLE IF EXISTS {_table}");
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _localConnection.DisposeAsync();
-        await _azrngConnection.DisposeAsync();
+        if (_localAttachConnection is not null)
+            await _localAttachConnection.DisposeAsync();
+        if (_localQueryConnection is not null)
+            await _localQueryConnection.DisposeAsync();
+        if (_azrngConnection is not null)
+            await _azrngConnection.DisposeAsync();
     }
 
     private static async Task ExecuteReadFirstAsync(
@@ -104,86 +144,11 @@ public class QueryBench : IAsyncDisposable
         await reader.ReadAsync();
     }
 
-    private static void AddParameters(DbCommand command, (string Name, object Value)[] parameters)
-    {
-        foreach (var (name, value) in parameters)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = name;
-            parameter.Value = value;
-            command.Parameters.Add(parameter);
-        }
-    }
-}
-
-[MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
-public class QueryBenchQuack : IAsyncDisposable
-{
-    private LocalQuackConnection _localConnection = null!;
-    private AzrngQuackConnection _azrngConnection = null!;
-
-    [GlobalSetup]
-    public async Task Setup()
-    {
-        _localConnection = new LocalQuackConnection(Program.ConnectionString);
-        await _localConnection.OpenAsync();
-        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
-        await _azrngConnection.OpenAsync();
-    }
-
-    [Benchmark(Baseline = true, Description = "Local quack_query SELECT 1")]
-    public async Task Local_Select1()
-    {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT 1");
-    }
-
-    [Benchmark(Description = "Azrng SELECT 1")]
-    public async Task Azrng_Select1()
-    {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT 1");
-    }
-
-    [Benchmark(Description = "Local quack_query SELECT @a + @b")]
-    public async Task Local_ParameterizedSelect()
-    {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
-    }
-
-    [Benchmark(Description = "Azrng SELECT @a + @b")]
-    public async Task Azrng_ParameterizedSelect()
-    {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT @a + @b", ("@a", 17L), ("@b", 25L));
-    }
-
-    [Benchmark(Description = "Local quack_query COUNT/SUM over 10k")]
-    public async Task Local_Aggregate10k()
-    {
-        await ExecuteReadFirstAsync(_localConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
-    }
-
-    [Benchmark(Description = "Azrng COUNT/SUM over 10k")]
-    public async Task Azrng_Aggregate10k()
-    {
-        await ExecuteReadFirstAsync(_azrngConnection, "SELECT COUNT(*), SUM(i) FROM range(0, 10000) t(i)");
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _localConnection.DisposeAsync();
-        await _azrngConnection.DisposeAsync();
-    }
-
-    private static async Task ExecuteReadFirstAsync(
-        DbConnection connection,
-        string sql,
-        params (string Name, object Value)[] parameters)
+    private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        AddParameters(command, parameters);
-        await using var reader = await command.ExecuteReaderAsync();
-        await reader.ReadAsync();
+        await command.ExecuteNonQueryAsync();
     }
 
     private static void AddParameters(DbCommand command, (string Name, object Value)[] parameters)
@@ -196,14 +161,32 @@ public class QueryBenchQuack : IAsyncDisposable
             command.Parameters.Add(parameter);
         }
     }
+
+    private static string BuildPointLookupSql(string table) =>
+        $"SELECT label FROM {table} WHERE i = @id";
+
+    private static string BuildAttachPointLookupSql(string table) =>
+        $"SELECT label FROM {table} WHERE i = ?";
+
+    private static string BuildParameterizedAggregateSql(string table) =>
+        $"SELECT COUNT(*), SUM(i) FROM {table} WHERE i >= @start AND i < @end";
+
+    private static string BuildAttachParameterizedAggregateSql(string table) =>
+        $"SELECT COUNT(*), SUM(i) FROM {table} WHERE i >= ? AND i < ?";
+
+    private static string BuildAggregateSql(string table) =>
+        $"SELECT COUNT(*), SUM(i) FROM {table} WHERE i < 10000";
 }
 
 [MemoryDiagnoser]
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
 public class ResultSetBench : IAsyncDisposable
 {
-    private LocalQuackConnection _localConnection = null!;
+    private LocalQuackConnection _localAttachConnection = null!;
+    private LocalQuackConnection _localQueryConnection = null!;
     private AzrngQuackConnection _azrngConnection = null!;
+    private string _table = "";
+    private string _attachTable = "";
 
     [Params(10000, 100000)]
     public int Rows { get; set; }
@@ -211,40 +194,70 @@ public class ResultSetBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _localConnection = new LocalQuackConnection(Program.ConnectionString);
-        await _localConnection.OpenAsync();
         _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
         await _azrngConnection.OpenAsync();
+        _table = "bench_result_" + Guid.NewGuid().ToString("N")[..12];
+        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
+        await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, {Rows}) t(i)");
+
+        _localAttachConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await _localAttachConnection.OpenAsync();
+        _localQueryConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
+        await _localQueryConnection.OpenAsync();
     }
 
-    [Benchmark(Baseline = true, Description = "Local read N rows")]
-    public async Task Local_ReadRows()
-    {
-        await ReadRowsAsync(_localConnection, Rows);
-    }
-
-    [Benchmark(Description = "Azrng read N rows")]
+    [Benchmark(Description = "Azrng remote read N rows")]
     public async Task Azrng_ReadRows()
     {
-        await ReadRowsAsync(_azrngConnection, Rows);
+        await ReadRowsAsync(_azrngConnection, _table);
+    }
+
+    [Benchmark(Baseline = true, Description = "Local ATTACH remote read N rows")]
+    public async Task LocalAttach_ReadRows()
+    {
+        await ReadRowsAsync(_localAttachConnection, _attachTable);
+    }
+
+    [Benchmark(Description = "Local quack_query remote read N rows")]
+    public async Task LocalQuery_ReadRows()
+    {
+        await ReadRowsAsync(_localQueryConnection, _table);
+    }
+
+    [GlobalCleanup]
+    public async Task Cleanup()
+    {
+        if (_azrngConnection is not null && !string.IsNullOrWhiteSpace(_table))
+            await ExecuteNonQueryAsync(_azrngConnection, $"DROP TABLE IF EXISTS {_table}");
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _localConnection.DisposeAsync();
-        await _azrngConnection.DisposeAsync();
+        if (_localAttachConnection is not null)
+            await _localAttachConnection.DisposeAsync();
+        if (_localQueryConnection is not null)
+            await _localQueryConnection.DisposeAsync();
+        if (_azrngConnection is not null)
+            await _azrngConnection.DisposeAsync();
     }
 
-    private static async Task ReadRowsAsync(DbConnection connection, int rows)
+    private static async Task ReadRowsAsync(DbConnection connection, string table)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT i, CAST(i AS VARCHAR) FROM range(0, {rows}) t(i)";
+        command.CommandText = $"SELECT i, label FROM {table} ORDER BY i";
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             _ = reader.GetInt64(0);
             _ = reader.GetString(1);
         }
+    }
+
+    private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
     }
 }
 
@@ -318,8 +331,12 @@ public class ReaderAccessBench : IAsyncDisposable
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
 public class ConcurrencyBench : IAsyncDisposable
 {
-    private LocalQuackConnection[] _localConnections = [];
+    private LocalQuackConnection[] _localAttachConnections = [];
+    private LocalQuackConnection[] _localQueryConnections = [];
     private AzrngQuackConnection[] _azrngConnections = [];
+    private AzrngQuackConnection _setupConnection = null!;
+    private string _table = "";
+    private string _attachTable = "";
 
     [Params(4, 16)]
     public int Degree { get; set; }
@@ -327,12 +344,21 @@ public class ConcurrencyBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _localConnections = new LocalQuackConnection[Degree];
+        _setupConnection = new AzrngQuackConnection(Program.ConnectionString);
+        await _setupConnection.OpenAsync();
+        _table = "bench_concurrency_" + Guid.NewGuid().ToString("N")[..12];
+        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
+        await ExecuteNonQueryAsync(_setupConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
+
+        _localAttachConnections = new LocalQuackConnection[Degree];
+        _localQueryConnections = new LocalQuackConnection[Degree];
         _azrngConnections = new AzrngQuackConnection[Degree];
         for (var i = 0; i < Degree; i++)
         {
-            _localConnections[i] = new LocalQuackConnection(Program.ConnectionString);
-            await OpenWithRetryAsync(_localConnections[i]);
+            _localAttachConnections[i] = new LocalQuackConnection(Program.LocalAttachConnectionString);
+            await OpenWithRetryAsync(_localAttachConnections[i]);
+            _localQueryConnections[i] = new LocalQuackConnection(Program.LocalQueryConnectionString);
+            await OpenWithRetryAsync(_localQueryConnections[i]);
             _azrngConnections[i] = new AzrngQuackConnection(Program.ConnectionString);
             await OpenWithRetryAsync(_azrngConnections[i]);
             await Task.Delay(50);
@@ -355,27 +381,44 @@ public class ConcurrencyBench : IAsyncDisposable
         }
     }
 
-    [Benchmark(Baseline = true, Description = "Local parallel SELECT 1")]
-    public async Task Local_ParallelQueries()
-    {
-        await RunParallelAsync(_localConnections);
-    }
-
-    [Benchmark(Description = "Azrng parallel SELECT 1")]
+    [Benchmark(Description = "Azrng parallel remote point lookup")]
     public async Task Azrng_ParallelQueries()
     {
-        await RunParallelAsync(_azrngConnections);
+        await RunParallelAsync(_azrngConnections, BuildNamedPointLookupSql(_table), namedParameter: true);
+    }
+
+    [Benchmark(Baseline = true, Description = "Local ATTACH parallel remote point lookup")]
+    public async Task LocalAttach_ParallelQueries()
+    {
+        await RunParallelAsync(_localAttachConnections, BuildQuestionMarkPointLookupSql(_attachTable), namedParameter: false);
+    }
+
+    [Benchmark(Description = "Local quack_query parallel remote point lookup")]
+    public async Task LocalQuery_ParallelQueries()
+    {
+        await RunParallelAsync(_localQueryConnections, BuildNamedPointLookupSql(_table), namedParameter: true);
+    }
+
+    [GlobalCleanup]
+    public async Task Cleanup()
+    {
+        if (_setupConnection is not null && !string.IsNullOrWhiteSpace(_table))
+            await ExecuteNonQueryAsync(_setupConnection, $"DROP TABLE IF EXISTS {_table}");
     }
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var conn in _localConnections)
+        foreach (var conn in _localAttachConnections)
+            await conn.DisposeAsync();
+        foreach (var conn in _localQueryConnections)
             await conn.DisposeAsync();
         foreach (var conn in _azrngConnections)
             await conn.DisposeAsync();
+        if (_setupConnection is not null)
+            await _setupConnection.DisposeAsync();
     }
 
-    private static Task RunParallelAsync(DbConnection[] connections)
+    private static Task RunParallelAsync(DbConnection[] connections, string sql, bool namedParameter)
     {
         var tasks = new Task[connections.Length];
         for (var i = 0; i < connections.Length; i++)
@@ -384,7 +427,11 @@ public class ConcurrencyBench : IAsyncDisposable
             tasks[i] = Task.Run(async () =>
             {
                 await using var command = conn.CreateCommand();
-                command.CommandText = "SELECT 1";
+                command.CommandText = sql;
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = namedParameter ? "@id" : "";
+                parameter.Value = 42L;
+                command.Parameters.Add(parameter);
                 await using var reader = await command.ExecuteReaderAsync();
                 await reader.ReadAsync();
             });
@@ -392,6 +439,19 @@ public class ConcurrencyBench : IAsyncDisposable
 
         return Task.WhenAll(tasks);
     }
+
+    private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string BuildNamedPointLookupSql(string table) =>
+        $"SELECT label FROM {table} WHERE i = @id";
+
+    private static string BuildQuestionMarkPointLookupSql(string table) =>
+        $"SELECT label FROM {table} WHERE i = ?";
 }
 
 [MemoryDiagnoser]
@@ -519,7 +579,7 @@ public class InsertBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _localConnection = new LocalQuackConnection(Program.ConnectionString);
+        _localConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
         await _localConnection.OpenAsync();
         _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
         await _azrngConnection.OpenAsync();
