@@ -364,6 +364,24 @@ public sealed class QuackDataProvider : IDisposable
         return $"SELECT * FROM quack_query('{EscapeSqlLiteral(_uri)}', '{EscapeSqlLiteral(normalized)}', token := '{EscapeSqlLiteral(_token)}', disable_ssl := {ToDuckDbBoolean(_disableSsl)})";
     }
 
+    /// <summary>
+    /// ATTACH 模式读查询的远端执行包装：强制 <c>USE catalog</c> + <c>quack_query(uri, ...)</c>。
+    /// 用于绕开 quack 扩展 v1.5.3 在 attached-table 上的下推丢失（WHERE 不下推、整表拉回本地筛）
+    /// 以及每查询的挂载表 schema/metadata 往返。
+    /// <para>
+    /// 注意：不能用 <c>quack_query_by_name(alias, sql)</c>——该函数要求 alias 在远端已作为 RPC 库 attach，
+    /// 实测报 "Attached database ... does not refer to a RPC database"。<c>quack_query</c> 的
+    /// <c>USE "catalog"; &lt;unqualified sql&gt;</c> 形式经实测可用。
+    /// </para>
+    /// </summary>
+    public string BuildAttachRemoteReadSql(string sql)
+    {
+        var normalized = SqlNormalizer.Normalize(sql);
+        normalized = $"USE \"{EscapeIdentifier(_attachedCatalog ?? "remote")}\"; {normalized}";
+
+        return $"SELECT * FROM quack_query('{EscapeSqlLiteral(_uri)}', '{EscapeSqlLiteral(normalized)}', token := '{EscapeSqlLiteral(_token)}', disable_ssl := {ToDuckDbBoolean(_disableSsl)})";
+    }
+
     #endregion
 
     /// <summary>
