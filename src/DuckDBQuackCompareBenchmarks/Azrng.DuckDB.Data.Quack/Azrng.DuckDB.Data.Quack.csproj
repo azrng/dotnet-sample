@@ -21,7 +21,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Quack.DuckDB.Tests"/>
+        <InternalsVisibleTo Include="Azrng.DuckDB.Data.Quack.Tests"/>
     </ItemGroup>
 
 </Project>

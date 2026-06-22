@@ -93,9 +93,12 @@ public sealed class QuackDuckDbConnection : DbConnection
 
     public override Task OpenAsync(CancellationToken cancellationToken)
     {
-        // 连接初始化包含本地扩展加载和远端 ATTACH，放到线程池避免阻塞调用线程。
+        // DuckDB.NET.Data 1.5.3 无原生异步 API（底层 libduckdb 为同步调用，已核实），
+        // 这里不再用 Task.Run 伪异步（仅把阻塞挪到另一线程池线程，徒增调度开销）。
+        // 直接同步完成初始化并返回已完成任务；token 已取消则抛出 OperationCanceledException。
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(Open, cancellationToken);
+        Open();
+        return Task.CompletedTask;
     }
 
     public override void Close()
@@ -178,6 +181,7 @@ internal sealed class QuackDbCommand : DbCommand
     private readonly QuackDbParameterCollection _parameters = new();
     private string _commandText = string.Empty;
     private int _commandTimeout = 30;
+    private static readonly Regex PlaceholderPattern = new(@"[@$]\w+", RegexOptions.CultureInvariant);
 
     public QuackDbCommand(DuckDBConnection innerConnection, QuackDataProvider provider)
     {
@@ -274,17 +278,22 @@ internal sealed class QuackDbCommand : DbCommand
 
     private string BuildResolvedSql()
     {
-        var sql = _commandText;
+        if (_parameters.Count == 0)
+            return _commandText;
+
+        // 单次扫描：一次正则扫描原始 SQL，仅命中已注册占位符才替换为字面量；
+        // 已替换的内容不会再被扫描，避免顺序替换在“某参数值恰好包含另一占位符文本”时被误伤。
+        var placeholderToParameter = new Dictionary<string, QuackDbParameter>(StringComparer.OrdinalIgnoreCase);
         foreach (QuackDbParameter parameter in _parameters)
         {
             foreach (var placeholder in GetPlaceholders(parameter.ParameterName))
-            {
-                var pattern = Regex.Escape(placeholder) + @"(?!\w)";
-                sql = Regex.Replace(sql, pattern, FormatParameterValue(parameter.Value), RegexOptions.IgnoreCase);
-            }
+                placeholderToParameter[placeholder] = parameter;
         }
 
-        return sql;
+        return PlaceholderPattern.Replace(_commandText, match =>
+            placeholderToParameter.TryGetValue(match.Value, out var parameter)
+                ? FormatParameterValue(parameter.Value)
+                : match.Value);
     }
 
     private static IEnumerable<string> GetPlaceholders(string parameterName)
