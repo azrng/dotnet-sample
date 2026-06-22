@@ -353,3 +353,6 @@ MigrationBackup/
 .codegraph
 .claude
 .idea
+
+# DuckDB 扩展二进制 —— 走外部地址引入，不入库
+*.duckdb_extension

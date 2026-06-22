@@ -1,8 +1,10 @@
 <Solution>
   <Project Path="DuckDBQuackCompareBenchmarks\DuckDBQuackCompareBenchmarks.csproj" />
   <Folder Name="/tests/">
+    <Project Path="tests/Azrng.DuckDB.Data.Quack.Tests/Azrng.DuckDB.Data.Quack.Tests.csproj" />
     <Project Path="tests/Azrng.DuckDB.Quack.Tests/Azrng.DuckDB.Quack.Tests.csproj" />
   </Folder>
+  <Project Path="Azrng.DuckDB.Data.Quack/Azrng.DuckDB.Data.Quack.csproj" />
   <Project Path="Azrng.DuckDB.Quack/Azrng.DuckDB.Quack.csproj" />
   <Project Path="DuckDBExtensionDownloader\DuckDBExtensionDownloader.csproj" />
 </Solution>
