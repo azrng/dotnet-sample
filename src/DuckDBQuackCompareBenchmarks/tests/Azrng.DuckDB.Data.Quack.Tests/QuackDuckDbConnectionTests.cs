@@ -84,4 +84,17 @@ public class QuackDuckDbConnectionTests
         Assert.Contains("ATTACH 'quack://172.16.68.108:9494' AS duckflight", sql);
         Assert.DoesNotContain("USE duckflight", sql, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void BuildQuackQuerySql_WithCatalog_UsesQuackQueryByName()
+    {
+        using var connection = new QuackDuckDbConnection(
+            "Host=172.16.68.108;Port=9494;Token=abc;Catalog=test;Attach=false");
+
+        var sql = connection.BuildQuackQuerySqlForTest("SELECT label FROM orders WHERE id = 7");
+
+        Assert.Contains("quack_query_by_name('test'", sql);
+        Assert.Contains("SELECT label FROM orders WHERE id = 7", sql);
+        Assert.DoesNotContain("USE \"test\"", sql, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -357,7 +357,9 @@ public sealed class QuackDataProvider : IDisposable
     {
         var normalized = SqlNormalizer.Normalize(sql);
         if (_useRemoteCatalog)
+        {
             normalized = $"USE \"{EscapeIdentifier(_attachedCatalog ?? "remote")}\"; {normalized}";
+        }
 
         return $"SELECT * FROM quack_query('{EscapeSqlLiteral(_uri)}', '{EscapeSqlLiteral(normalized)}', token := '{EscapeSqlLiteral(_token)}', disable_ssl := {ToDuckDbBoolean(_disableSsl)})";
     }
@@ -395,7 +397,7 @@ public sealed class QuackDataProvider : IDisposable
         }
     }
 
-    private void EnsureReady()
+    internal void EnsureReady()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_useAttach && !_attached)

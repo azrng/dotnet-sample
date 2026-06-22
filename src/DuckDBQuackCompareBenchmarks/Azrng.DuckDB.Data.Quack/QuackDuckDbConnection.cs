@@ -247,6 +247,7 @@ internal sealed class QuackDbCommand : DbCommand
 
     private DbCommand CreateInnerCommand()
     {
+        _provider.EnsureReady();
         var command = _innerConnection.CreateCommand();
         
         if (_provider.UseAttachMode())

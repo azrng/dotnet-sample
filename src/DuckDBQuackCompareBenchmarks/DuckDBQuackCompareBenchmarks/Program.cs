@@ -16,6 +16,11 @@ internal static class Program
 
     public static readonly string LocalCatalog = LocalConfig.Catalog;
 
+    public static readonly string LocalAttachCatalog =
+        string.Equals(LocalConfig.Catalog, "memory", StringComparison.OrdinalIgnoreCase)
+            ? "remote"
+            : LocalConfig.Catalog;
+
     public static readonly string LocalAttachConnectionString = BuildLocalConnectionString(attach: true);
 
     public static readonly string LocalQueryConnectionString = BuildLocalConnectionString(attach: false);
@@ -90,7 +95,7 @@ internal static class Program
             $"Host={LocalConfig.Host}",
             $"Port={LocalConfig.Port}",
             $"Token={LocalConfig.Token}",
-            $"Catalog={LocalConfig.Catalog}",
+            $"Catalog={(attach ? LocalAttachCatalog : LocalConfig.Catalog)}",
             $"DisableSsl={LocalConfig.DisableSsl.ToString().ToLowerInvariant()}",
             $"Attach={attach.ToString().ToLowerInvariant()}",
         };

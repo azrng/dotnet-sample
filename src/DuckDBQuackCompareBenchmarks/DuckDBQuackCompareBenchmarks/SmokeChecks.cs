@@ -25,15 +25,14 @@ internal static class SmokeChecks
     private static async Task EnsureRemoteTableParityAsync()
     {
         var tableName = "smoke_remote_" + Guid.NewGuid().ToString("N")[..12];
-        var attachTableName = $"{Program.LocalCatalog}.main.{tableName}";
-        await using var setupConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await using var setupConnection = new AzrngQuackConnection(Program.ConnectionString);
         await setupConnection.OpenAsync();
 
         try
         {
             await ExecuteNonQueryAsync(
                 setupConnection,
-                $"CREATE TABLE {attachTableName} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label, i % 2 = 0 AS is_even, i * 1.25 AS amount FROM range(0, 16) t(i)");
+                $"CREATE TABLE {tableName} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label, i % 2 = 0 AS is_even, i * 1.25 AS amount FROM range(0, 16) t(i)");
 
             await EnsureScalarParityAsync(
                 $"SELECT label FROM {tableName} WHERE i = @id",
@@ -49,7 +48,7 @@ internal static class SmokeChecks
         }
         finally
         {
-            await ExecuteNonQueryAsync(setupConnection, $"DROP TABLE IF EXISTS {attachTableName}");
+            await ExecuteNonQueryAsync(setupConnection, $"DROP TABLE IF EXISTS {tableName}");
         }
     }
 
