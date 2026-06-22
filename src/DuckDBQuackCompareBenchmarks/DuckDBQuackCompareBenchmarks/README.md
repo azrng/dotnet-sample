@@ -127,4 +127,116 @@ BenchmarkDotNet 会将 Markdown 和 JSON 报告输出到 `BenchmarkDotNet.Artifa
 
 ## 测试结果
 
-详细结果和分析见 [BENCHMARK_RESULTS.md](../BENCHMARK_RESULTS.md)。
+### 环境
+
+- BenchmarkDotNet 0.15.8 / .NET 10.0.8 / Windows 10 (Intel Core i3-9100, 4 核)
+- 目标：`Host=172.16.100.26;Port=9494;Catalog=test`（`DisableSsl=true`，纯 HTTP）
+- 三种模式连同一台远端 Quack/DuckDB（v1.5.3 扩展）
+- 默认 `IterationCount=10, WarmupCount=3`（`InsertPerRow/InsertBatch` 因单次耗时长保持 3）；`QueryBench`/`ReaderAccessBench` 为 10 次迭代验证版，其余为首跑（3–5 次）数据。Local ATTACH 路径存在重尾（下推病态，见下文结论），故同时给 Mean 与 Median。
+
+### 关键结论
+
+1. **Azrng 纯 HTTP 客户端全场景最快**（点查 ~1.9 ms）。它把 SQL 直接 POST 给远端执行，只回小结果，且无嵌入式引擎开销。
+2. **Local ATTACH 对带过滤的查询有严重 pushdown 病态**：`WHERE` 没下推到远端，本地把整表拉回再筛——点查比 Azrng 慢 30×、比 quack_query 慢 3×，且重尾方差大（Mean 与 Median 差很多）。全表读（无过滤）则与 quack_query 持平。
+3. **Local quack_query** 是稳定的中间档（点查 ~21 ms）。
+4. **Azrng 读路径内存约 3× 于 Local**（换取更低延迟）；已对 typed-getter 去装箱优化（见 ReaderAccessBench）。
+5. 连接池有效（acquire ~1.7 ms）；批量插入**单次全量 > 分页**（1000 行：全量 26 ms vs 分页 100=160 ms）。
+
+### ConnectionBench（初始化+销毁，IterationCount=5）
+
+| 方法 | Mean | Allocated |
+|------|-----:|----------:|
+| Azrng connect+dispose                 |   3.83 ms | 16.47 KB |
+| Local ATTACH initialize+dispose       |  61.72 ms | 12.19 KB |
+| Local quack_query initialize+dispose  |  17.81 ms | 11.07 KB |
+
+> ATTACH 含嵌入式 DuckDB 引擎初始化 + httpfs/quack 扩展加载，故最慢；Azrng 不加载引擎/扩展。
+
+### ColdQueryBench（每查询新开连接，IterationCount=5）
+
+| 方法 | Mean | Allocated |
+|------|-----:|----------:|
+| Azrng cold equality filter                 |   5.33 ms | 24.01 KB |
+| Local ATTACH cold equality filter          | 135.54 ms | 14.12 KB |
+| Local quack_query cold equality filter     |  36.68 ms | 14.41 KB |
+
+### QueryBench（warm connection，IterationCount=10，验证版）
+
+| 方法 | Mean | Median | Allocated |
+|------|-----:|-------:|----------:|
+| Azrng remote equality filter              |   1.87 ms |  1.87 ms | 8.07 KB |
+| Local ATTACH remote equality filter       |  59.64 ms | 57.88 ms | 1.90 KB |
+| Local quack_query remote equality filter  |  21.27 ms | 21.04 ms | 3.30 KB |
+| Azrng remote parameterized aggregate      |   2.25 ms |  2.27 ms | 8.73 KB |
+| Local ATTACH remote parameterized aggregate | 34.79 ms | 35.72 ms | 2.45 KB |
+| Local quack_query remote parameterized aggregate | 20.73 ms | 20.41 ms | 4.12 KB |
+| Azrng remote aggregate 10k                |   2.09 ms |  2.08 ms | 7.31 KB |
+| Local ATTACH remote aggregate 10k         | 130.77 ms | 47.84 ms | 1.78 KB |
+| Local quack_query remote aggregate 10k    |  22.26 ms | 22.08 ms | 2.64 KB |
+
+### ResultSetBench（读 N 行，IterationCount=3）
+
+| 方法 | Rows | Mean | Allocated |
+|------|-----:|-----:|----------:|
+| Azrng remote read N rows             |  10000 |   5.72 ms |   887.18 KB |
+| Local ATTACH remote read N rows      |  10000 |  13.55 ms |   314.02 KB |
+| Local quack_query remote read N rows |  10000 |  27.68 ms |   315.07 KB |
+| Azrng remote read N rows             | 100000 |  39.21 ms |  9005.6 KB |
+| Local ATTACH remote read N rows      | 100000 | 170.12 ms |  3128.15 KB |
+| Local quack_query remote read N rows | 100000 | 168.50 ms |  3129.26 KB |
+
+### ReaderAccessBench（Azrng reader 访问方式，IterationCount=10，验证版）
+
+| 方法 | Rows | Mean | Allocated |
+|------|-----:|-----:|----------:|
+| Azrng reader GetValue       |  10000 |  8.10 ms |   2.28 MB |
+| Azrng reader GetValues      |  10000 |  8.52 ms |   2.28 MB |
+| Azrng reader typed getters  |  10000 |  8.15 ms |   1.82 MB |
+| Azrng reader GetValue       | 100000 | 68.40 ms |  22.91 MB |
+| Azrng reader GetValues      | 100000 | 72.25 ms |  22.91 MB |
+| Azrng reader typed getters  | 100000 | 67.45 ms |  18.33 MB |
+
+> typed getters 经 columnar 原生数组快路径去装箱后，100k 行分配 21.6 MB → 18.3 MB（-15%）。
+
+### ConcurrencyBench（并行，IterationCount=3）
+
+| 方法 | Degree | Mean | Allocated |
+|------|-------:|-----:|----------:|
+| Azrng parallel equality filter              |  4 |     2.48 ms |  31.27 KB |
+| Local ATTACH parallel equality filter       |  4 |  1092.87 ms |   6.79 KB |
+| Local quack_query parallel equality filter  |  4 |    70.80 ms |  12.93 KB |
+| Azrng parallel equality filter              | 16 |     4.57 ms | 122.82 KB |
+| Local ATTACH parallel equality filter       | 16 |  2283.55 ms |  33.99 KB |
+| Local quack_query parallel equality filter  | 16 |   291.03 ms |  50.93 KB |
+
+### PoolBench（Azrng 连接池，IterationCount=5）
+
+| 方法 | Degree | Mean | Allocated |
+|------|-------:|-----:|----------:|
+| Azrng pool acquire + return               |  4 | 1.67 ms |   7.41 KB |
+| Azrng pool lease remote equality filter   |  4 | 3.95 ms |  15.45 KB |
+| Azrng pool lease parallel equality filter | 16 | 8.82 ms | 242.39 KB |
+
+### InsertPerRowBench（逐行插入，IterationCount=3）
+
+| 方法 | Rows | Mean | Allocated |
+|------|-----:|-----:|----------:|
+| Azrng per-row insert |  100 |  1.143 s |  839.33 KB |
+| Local per-row insert |  100 |  2.881 s |  321.45 KB |
+| Azrng per-row insert | 1000 | 12.240 s | 8260.03 KB |
+
+> Local per-row insert（1000 行）在该环境超时未取得稳定结果（NA）。
+
+### InsertBatchBench（Azrng 批量插入，IterationCount=3）
+
+| 方法 | Rows | BatchSize | Mean | Allocated |
+|------|-----:|----------:|-----:|----------:|
+| Azrng batch insert all rows | 1000 |  500 |  26.23 ms | 180.41 KB |
+| Azrng paged batch insert    | 1000 |  100 | 160.36 ms | 261.74 KB |
+| Azrng paged batch insert    | 1000 |  500 |  51.18 ms | 194.71 KB |
+
+> 单次全量批量（26 ms）远优于分页；分页时 batch size 越大越快（100→160 ms，500→51 ms）。
+
+---
+
+详细结果与分析另见 [BENCHMARK_RESULTS.md](../BENCHMARK_RESULTS.md)。报告原文在 `BenchmarkDotNet.Artifacts/results/`。

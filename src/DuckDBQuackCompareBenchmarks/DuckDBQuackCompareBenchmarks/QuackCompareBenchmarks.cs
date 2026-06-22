@@ -7,7 +7,10 @@ using LocalQuackConnection = Azrng.DuckDB.Data.Quack.QuackDuckDbConnection;
 namespace DuckDBQuackCompareBenchmarks;
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
+// 迭代数从 5 提升到 10、预热从 2 提升到 3：网络+GC 耦合的基准在 5 次迭代时
+// 99.9% 置信半宽（Error）常大于 Mean（不可用）。10 次测量让 BenchmarkDotNet 的
+// Tukey 离群点剔除能稳定工作，Local ATTACH 的重尾分布才有可信统计。
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class ConnectionBench
 {
     [Benchmark(Description = "Local ATTACH initialize+dispose")]
@@ -33,7 +36,10 @@ public class ConnectionBench
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
+// 迭代数从 5 提升到 10、预热从 2 提升到 3：网络+GC 耦合的基准在 5 次迭代时
+// 99.9% 置信半宽（Error）常大于 Mean（不可用）。10 次测量让 BenchmarkDotNet 的
+// Tukey 离群点剔除能稳定工作，Local ATTACH 的重尾分布才有可信统计。
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class ColdQueryBench : IAsyncDisposable
 {
     private LocalQuackConnection _setupConnection = null!;
@@ -133,7 +139,10 @@ public class ColdQueryBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
+// 迭代数从 5 提升到 10、预热从 2 提升到 3：网络+GC 耦合的基准在 5 次迭代时
+// 99.9% 置信半宽（Error）常大于 Mean（不可用）。10 次测量让 BenchmarkDotNet 的
+// Tukey 离群点剔除能稳定工作，Local ATTACH 的重尾分布才有可信统计。
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class QueryBench : IAsyncDisposable
 {
     private LocalQuackConnection _localAttachConnection = null!;
@@ -282,7 +291,7 @@ public class QueryBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class ResultSetBench : IAsyncDisposable
 {
     private LocalQuackConnection _localAttachConnection = null!;
@@ -368,7 +377,7 @@ public class ResultSetBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class ReaderAccessBench : IAsyncDisposable
 {
     private LocalQuackConnection _setupConnection = null!;
@@ -475,7 +484,7 @@ public class ReaderAccessBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class ConcurrencyBench : IAsyncDisposable
 {
     private LocalQuackConnection[] _localAttachConnections = [];
@@ -608,7 +617,10 @@ public class ConcurrencyBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
+// 迭代数从 5 提升到 10、预热从 2 提升到 3：网络+GC 耦合的基准在 5 次迭代时
+// 99.9% 置信半宽（Error）常大于 Mean（不可用）。10 次测量让 BenchmarkDotNet 的
+// Tukey 离群点剔除能稳定工作，Local ATTACH 的重尾分布才有可信统计。
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 10)]
 public class PoolBench : IAsyncDisposable
 {
     private LocalQuackConnection _setupConnection = null!;
@@ -753,7 +765,8 @@ public class PoolBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+// 逐行插入单次耗时长（1000 行 ~12s），保持 3 次测量控制总时长，仅提升预热。
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 3)]
 public class InsertPerRowBench : IAsyncDisposable
 {
     private LocalQuackConnection _localConnection = null!;
@@ -781,11 +794,13 @@ public class InsertPerRowBench : IAsyncDisposable
         await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_azrngTable} (id INTEGER, label VARCHAR)");
     }
 
+    // BenchmarkDotNet 不支持返回 Task 的 [IterationSetup]（代码生成直接赋值给 Action，未做 AwaitHelper 包装），
+    // 故这里同步阻塞执行；IterationSetup 不计入计时，sync-over-async 无副作用。
     [IterationSetup]
-    public async Task IterationSetup()
+    public void IterationSetup()
     {
-        await ExecuteNonQueryAsync(_localConnection, $"DELETE FROM {_localTable}");
-        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
+        ExecuteNonQueryAsync(_localConnection, $"DELETE FROM {_localTable}").GetAwaiter().GetResult();
+        ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}").GetAwaiter().GetResult();
     }
 
     [Benchmark(Baseline = true, Description = "Local per-row insert")]
@@ -850,7 +865,7 @@ public class InsertPerRowBench : IAsyncDisposable
 }
 
 [MemoryDiagnoser]
-[SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 3)]
+[SimpleJob(launchCount: 1, warmupCount: 3, iterationCount: 3)]
 public class InsertBatchBench : IAsyncDisposable
 {
     private AzrngQuackConnection _azrngConnection = null!;
@@ -876,10 +891,11 @@ public class InsertBatchBench : IAsyncDisposable
             .ToArray();
     }
 
+    // BenchmarkDotNet 不支持返回 Task 的 [IterationSetup]，见 InsertPerRowBench 同名方法注释。
     [IterationSetup]
-    public async Task IterationSetup()
+    public void IterationSetup()
     {
-        await ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}");
+        ExecuteNonQueryAsync(_azrngConnection, $"DELETE FROM {_azrngTable}").GetAwaiter().GetResult();
     }
 
     [Benchmark(Description = "Azrng batch insert all rows")]

@@ -89,4 +89,58 @@ internal sealed class ColumnarBatch
         var v = GetValue(col, row);
         return v is null ? null : Convert.ToString(v);
     }
+
+    // 以下 typed 访问器与 GetInt64/GetString 同构：命中原生数组即零装箱返回，
+    // 否则回退 GetValue（按需装箱）。补齐 Boolean/Double/Single/Decimal/窄整型，
+    // 让 DbDataReader 的 GetBoolean/GetDouble 等 typed 读取器不再对每个值装箱。
+    // 窄整型（Int32/Int16/Byte）经 Convert 转换底层 long[]，保持溢出检查且不装箱。
+
+    /// <summary>布尔列快路径。</summary>
+    public bool GetBoolean(int col, int row)
+    {
+        if (Columns[col] is bool[] a) return a[row];
+        return Convert.ToBoolean(GetValue(col, row));
+    }
+
+    /// <summary>双精度列快路径。</summary>
+    public double GetDouble(int col, int row)
+    {
+        if (Columns[col] is double[] a) return a[row];
+        return Convert.ToDouble(GetValue(col, row));
+    }
+
+    /// <summary>单精度列快路径。</summary>
+    public float GetSingle(int col, int row)
+    {
+        if (Columns[col] is float[] a) return a[row];
+        return Convert.ToSingle(GetValue(col, row));
+    }
+
+    /// <summary>decimal 列快路径。</summary>
+    public decimal GetDecimal(int col, int row)
+    {
+        if (Columns[col] is decimal[] a) return a[row];
+        return Convert.ToDecimal(GetValue(col, row));
+    }
+
+    /// <summary>32 位整型快路径（底层 long[]，经 Convert 保持溢出检查、无装箱）。</summary>
+    public int GetInt32(int col, int row)
+    {
+        if (Columns[col] is long[] a) return Convert.ToInt32(a[row]);
+        return Convert.ToInt32(GetValue(col, row));
+    }
+
+    /// <summary>16 位整型快路径。</summary>
+    public short GetInt16(int col, int row)
+    {
+        if (Columns[col] is long[] a) return Convert.ToInt16(a[row]);
+        return Convert.ToInt16(GetValue(col, row));
+    }
+
+    /// <summary>字节快路径。</summary>
+    public byte GetByte(int col, int row)
+    {
+        if (Columns[col] is long[] a) return Convert.ToByte(a[row]);
+        return Convert.ToByte(GetValue(col, row));
+    }
 }

@@ -87,7 +87,8 @@ public static class QuackProtocolConnectionStringParser
         string? catalog = null;
         if (!props.TryGetValue("Catalog", out catalog))
             props.TryGetValue("Database", out catalog);
-        var disableSslText = props.GetValueOrDefault("DisableSsl", "false");
+        // 默认禁用 SSL：Quack 默认容器为纯 HTTP，与同仓 Data.Quack 解析器及 README 保持一致。
+        var disableSslText = props.GetValueOrDefault("DisableSsl", "true");
         var timeoutText = props.GetValueOrDefault("Timeout", props.GetValueOrDefault("TimeoutSeconds", "30"));
 
         if (!int.TryParse(portText, out var port))
@@ -130,8 +131,9 @@ public static class QuackProtocolConnectionStringParser
 
         var token = GetQueryValue(parsed.Query, "token") ?? GetQueryValue(parsed.Query, "password") ?? "";
         var catalog = GetQueryValue(parsed.Query, "catalog") ?? GetQueryValue(parsed.Query, "database");
+        // tls 缺省时默认禁用 SSL（与键值对解析的默认值一致）；仅 tls=true 才启用 SSL。
         var tls = GetQueryValue(parsed.Query, "tls");
-        var disableSsl = tls != null && !ParseBoolean(tls, "tls");
+        var disableSsl = tls == null || !ParseBoolean(tls, "tls");
 
         var config = new QuackProtocolConfig
         {
