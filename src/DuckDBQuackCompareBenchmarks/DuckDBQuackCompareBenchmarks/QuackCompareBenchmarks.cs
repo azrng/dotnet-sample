@@ -2,7 +2,7 @@ using System.Data.Common;
 using BenchmarkDotNet.Attributes;
 using Azrng.DuckDB.Quack;
 using AzrngQuackConnection = Azrng.DuckDB.Quack.QuackConnection;
-using LocalQuackConnection = Quack.DuckDB.QuackDuckDbConnection;
+using LocalQuackConnection = Azrng.DuckDB.Data.Quack.QuackDuckDbConnection;
 
 namespace DuckDBQuackCompareBenchmarks;
 

@@ -1,6 +1,6 @@
 using System.Data.Common;
 using AzrngQuackConnection = Azrng.DuckDB.Quack.QuackConnection;
-using LocalQuackConnection = Quack.DuckDB.QuackDuckDbConnection;
+using LocalQuackConnection = Azrng.DuckDB.Data.Quack.QuackDuckDbConnection;
 
 namespace DuckDBQuackCompareBenchmarks;
 
