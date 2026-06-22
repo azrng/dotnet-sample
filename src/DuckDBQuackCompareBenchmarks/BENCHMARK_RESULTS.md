@@ -1,93 +1,90 @@
-# DuckDB Quack Compare Benchmarks
+# DuckDB Quack 基准测试结果
 
 ## 测试环境
 
 | 项目 | 配置 |
 |------|------|
-| 操作系统 | Windows 11 (10.0.26200.8655/25H2) |
-| CPU | Intel Core Ultra 7 255HX 2.40GHz (20核20线程) |
-| 内存 | 16 GB |
-| .NET SDK | 10.0.301 |
-| Runtime | .NET 10.0.9 (10.0.926.27113), X64 RyuJIT x86-64-v3 |
+| 操作系统 | Windows 10 (10.0.19045.6466/22H2) |
+| CPU | AMD Ryzen 5 PRO 4650U 2.10GHz (6核12线程) |
+| .NET SDK | 10.0.202 |
+| Runtime | .NET 10.0.6 (10.0.6, 10.0.626.17701), X64 RyuJIT x86-64-v3 |
 | BenchmarkDotNet | v0.15.8 |
-| DuckDB Server | DuckDB Quack 1.5.3 (Docker, 4 CPU, 8GB RAM) |
-| 测试日期 | 2026-06-21 (第二次运行) |
+| DuckDB Server | Quack Server (172.16.100.26:9494, Catalog=test) |
+| 测试日期 | 2026-06-22 |
 
 ## 测试对象
 
-- **Local**: 本地实现 `Quack.DuckDB` (vendored from local path)
-- **Azrng**: NuGet包 `Azrng.DuckDB.Quack` 1.0.0-beta2
+三种模式均连接同一 Quack 服务器：
+
+| 模式 | 连接类 | 连接字符串 | 说明 |
+|------|--------|-----------|------|
+| **Azrng** | `AzrngQuackConnection` | 普通 | 纯 C# HTTP 客户端，直接调用 Quack 服务器 HTTP API |
+| **Local Attach** | `LocalQuackConnection` | `+Attach=true` | 本地 DuckDB 引擎 + Quack 扩展，通过 `ATTACH` 挂载远程目录，查询下推 |
+| **Local Query** | `LocalQuackConnection` | 普通 | 本地 DuckDB 引擎 + Quack 扩展，通过 `quack_query()` 函数远程执行 |
 
 ---
 
-## 1. ConnectionBench - 连接打开/关闭
+## 1. ConnectionBench - 连接建立/销毁
 
-| Method | Mean | Error | StdDev | Ratio | Allocated | Alloc Ratio |
-|--------|-----:|------:|-------:|------:|----------:|------------:|
-| Azrng Open+Dispose | 883.6 us | 279.3 us | 72.52 us | 0.01 | 9.9 KB | 1.97 |
-| Local Open+Dispose | 66,682.8 us | 1,821.2 us | 281.84 us | 1.00 | 5.03 KB | 1.00 |
+| 模式 | Mean | Ratio |
+|------|-----:|------:|
+| Azrng | 19.58 ms | 0.86x |
+| Local Attach | 22.68 ms | 1.00x (baseline) |
 
-**结论**: Azrng 连接速度比 Local 快约 **75倍** (883.6us vs 66.7ms)
+**结论**：Azrng 连接比 Local Attach 快约 14%。Local Attach 需要在 `Open()` 时加载 httpfs + quack 扩展并执行 `ATTACH`，开销略高。
 
 ---
 
-## 2. QueryBench - 查询性能 (ATTACH 模式 vs quack_query 模式)
+## 2. QueryBench - 查询延迟
 
-Local 实现支持两种查询模式：
-- **ATTACH 模式**: 使用 `ATTACH 'quack://...' AS remote` 挂载远程数据库，查询下推
-- **quack_query 模式**: 使用 `SELECT * FROM quack_query(...)` 函数包装 SQL
+### 2.1 Local Attach 模式（QueryBench）
 
-### 2.1 ATTACH 模式 (QueryBench)
+| 查询 | Azrng | Local Attach | Azrng / Local |
+|------|------:|-------------:|-------------:|
+| SELECT 1 | 7.16 ms | 0.22 ms | 32x |
+| SELECT @a + @b | 6.61 ms | 0.46 ms | 14x |
+| COUNT/SUM over 10k | 8.38 ms | 0.47 ms | 18x |
 
-| Method | Mean | Error | StdDev | Ratio | Allocated | Alloc Ratio |
-|--------|-----:|------:|-------:|------:|----------:|------------:|
-| Local ATTACH SELECT 1 | 54.75 us | 0.59 us | 0.15 us | 1.00 | 1.14 KB | 1.00 |
-| Local ATTACH SELECT @a + @b | 122.58 us | 1.31 us | 0.34 us | 2.24 | 1.51 KB | 1.32 |
-| Local ATTACH COUNT/SUM over 10k | 164.15 us | 8.64 us | 1.34 us | 3.00 | 1.3 KB | 1.14 |
-| Azrng SELECT 1 | 550.09 us | 36.31 us | 9.43 us | 10.05 | 6.5 KB | 5.70 |
-| Azrng SELECT @a + @b | 573.20 us | 15.77 us | 4.10 us | 10.47 | 7.42 KB | 6.50 |
-| Azrng COUNT/SUM over 10k | 661.20 us | 30.85 us | 8.01 us | 12.08 | 6.78 KB | 5.95 |
+**结论**：Local Attach 模式下查询延迟远低于 Azrng。Attach 模式使用 DuckDB 原生协议，查询自动下推到服务器执行，延迟在亚毫秒级。
 
-**结论**: ATTACH 模式下 Local 比 Azrng 快 **4-10倍**
+### 2.2 Local Query 模式（QueryBenchQuack）
 
-### 2.2 quack_query 模式 (QueryBenchQuack)
+| 查询 | Azrng | Local Query | Azrng 倍率 |
+|------|------:|------------:|----------:|
+| SELECT 1 | 6.31 ms | 51.22 ms | **7.7x 快** |
+| SELECT @a + @b | 6.23 ms | 48.00 ms | **7.7x 快** |
+| COUNT/SUM over 10k | 8.74 ms | 56.32 ms | **6.4x 快** |
 
-| Method | Mean | Error | StdDev | Ratio | Allocated | Alloc Ratio |
-|--------|-----:|------:|-------:|------:|----------:|------------:|
-| Local quack_query SELECT 1 | 5.754 ms | 454.15 us | 117.94 us | 1.00 | 1.92 KB | 1.00 |
-| Local quack_query SELECT @a + @b | 6.078 ms | 702.18 us | 182.35 us | 1.06 | 2.51 KB | 1.31 |
-| Local quack_query COUNT/SUM over 10k | 5.867 ms | 816.26 us | 211.98 us | 1.02 | 2.17 KB | 1.13 |
-| Azrng SELECT 1 | 545.35 us | 10.86 us | 2.82 us | 0.09 | 6.5 KB | 3.39 |
-| Azrng SELECT @a + @b | 577.50 us | 18.96 us | 4.92 us | 0.10 | 7.42 KB | 3.87 |
-| Azrng COUNT/SUM over 10k | 652.75 us | 14.02 us | 3.64 us | 0.11 | 6.78 KB | 3.54 |
+**结论**：同为远程协议模式，Azrng 比 Local Query 快 6-8 倍。Local Query 每次查询需经过 `quack_query()` 函数包装、SQL 序列化、HTTP 调用等额外开销。
 
-**结论**: quack_query 模式下 Azrng 比 Local 快 **9-10倍**
+### 2.3 三种模式对比
 
-### 2.3 模式对比
+| 查询 | Local Attach | Azrng | Local Query |
+|------|------------:|------:|------------:|
+| SELECT 1 | **0.22 ms** | 7.16 ms | 51.22 ms |
+| SELECT @a + @b | **0.46 ms** | 6.61 ms | 48.00 ms |
+| COUNT/SUM over 10k | **0.47 ms** | 8.38 ms | 56.32 ms |
 
-| 测试项 | Local ATTACH | Local quack_query | Azrng | ATTACH vs quack_query |
-|--------|-------------|-------------------|-------|----------------------|
-| SELECT 1 | 54.75 us | 5.754 ms | 550.09 us | **105x** |
-| SELECT @a+@b | 122.58 us | 6.078 ms | 573.20 us | **50x** |
-| COUNT/SUM 10k | 164.15 us | 5.867 ms | 661.20 us | **36x** |
-
-**结论**: ATTACH 模式比 quack_query 模式快 **36-105倍**
+**结论**：Local Attach 最快（亚毫秒），Azrng 次之（6-8ms），Local Query 最慢（48-56ms）。
 
 ### 2.4 架构差异
 
 ```
-quack_query 模式:
-Client → 嵌入式 DuckDB → quack_query() 函数 → HTTP POST → Server
+Local Attach 模式（最快）:
+Client → 嵌入式 DuckDB → ATTACH → 原生协议 → Quack Server（查询下推）
 
-ATTACH 模式:
-Client → 嵌入式 DuckDB → ATTACH → 原生协议 → Server (查询下推)
+Azrng 模式（中等）:
+Client → 纯 HTTP Client → HTTP POST → Quack Server
+
+Local Query 模式（最慢）:
+Client → 嵌入式 DuckDB → quack_query() 函数 → HTTP POST → Quack Server
 ```
 
-ATTACH 模式的优势：
-1. **协议效率**: 使用 DuckDB 原生二进制协议，而非 HTTP 文本协议
-2. **连接复用**: 初始化一次，后续查询复用连接
-3. **查询下推**: DuckDB 自动将查询下推到服务器执行
-4. **参数绑定**: 使用原生参数绑定，无需序列化成字面量
+Local Attach 优势：
+1. **协议效率**：使用 Quack 原生协议，而非 HTTP 文本协议
+2. **连接复用**：初始化一次，后续查询复用连接
+3. **查询下推**：DuckDB 自动将查询下推到服务器执行
+4. **参数绑定**：使用原生参数绑定，无需序列化成字面量
 
 ---
 
@@ -95,75 +92,64 @@ ATTACH 模式的优势：
 
 ### Rows = 10,000
 
-| Method | Mean | Error | StdDev | Ratio | Allocated | Alloc Ratio |
-|--------|-----:|------:|-------:|------:|----------:|------------:|
-| Azrng read N rows | 1.441 ms | 0.491 ms | 0.027 ms | 0.16 | 886.54 KB | 2.82 |
-| Local read N rows | 9.228 ms | 11.824 ms | 0.648 ms | 1.00 | 314.89 KB | 1.00 |
+| 模式 | Mean | Ratio |
+|------|-----:|------:|
+| Azrng | 29.00 ms | 0.37x |
+| Local Attach | 78.35 ms | 1.00x (baseline) |
 
 ### Rows = 100,000
 
-| Method | Mean | Error | StdDev | Allocated |
-|--------|-----:|------:|-------:|----------:|
-| Azrng read N rows | 10.134 ms | 7.393 ms | 0.405 ms | 8999.36 KB |
-| Local read N rows | N/A | N/A | N/A | N/A |
+| 模式 | Mean | Ratio |
+|------|-----:|------:|
+| Azrng | 304.21 ms | 0.92x |
+| Local Attach | 331.90 ms | 1.00x (baseline) |
 
-**结论**: 
-- 10k行: Azrng 比 Local 快 **6.4倍** (1.44ms vs 9.23ms)
-- 100k行: Azrng 成功完成 (10.1ms)，Local 因连接超时失败
+**结论**：
+- 小结果集（10k 行）Azrng 比 Local Attach 快 2.7 倍
+- 大结果集（100k 行）两者接近，Azrng 略快
 
 ---
 
-## 4. ReaderAccessBench - 读取器访问性能 (Azrng Only)
+## 4. ReaderAccessBench - 读取器访问方式（仅 Azrng）
 
-| Method | Rows | Mean | Error | StdDev | Allocated |
-|--------|-----:|-----:|------:|-------:|----------:|
-| Azrng reader typed getters | 10000 | 2.456 ms | 0.980 ms | 0.054 ms | 2,150,461 B |
-| Azrng reader GetValue | 10000 | 2.545 ms | 1.946 ms | 0.107 ms | 2,390,450 B |
-| Azrng reader GetValues | 10000 | 2.745 ms | 1.340 ms | 0.073 ms | 2,390,481 B |
-| Azrng reader typed getters | 100000 | 23.890 ms | 5.849 ms | 0.321 ms | 21,611,108 B |
-| Azrng reader GetValue | 100000 | 23.385 ms | 9.477 ms | 0.520 ms | 24,011,454 B |
-| Azrng reader GetValues | 100000 | 24.784 ms | 17.598 ms | 0.965 ms | - |
+| 访问方式 | 10,000 行 | 100,000 行 |
+|---------|----------:|----------:|
+| Typed Getters | 61.93 ms | 665.58 ms |
+| GetValue | 61.86 ms | 647.26 ms |
+| GetValues | 62.01 ms | 650.40 ms |
 
-**结论**: 三种访问方式性能接近，typed getters 内存分配略低
+**结论**：三种读取方式性能几乎无差异，Typed Getters 内存分配略低。
 
 ---
 
 ## 5. ConcurrencyBench - 并发查询
 
-| Method | Degree | Mean | Error | StdDev | Allocated | Alloc Ratio |
-|--------|-------:|-----:|------:|-------:|----------:|------------:|
-| Azrng parallel SELECT 1 | 4 | 630.0 us | 1,035.9 us | 56.78 us | 26.5 KB | 2.94 |
-| Local parallel SELECT 1 | 4 | 17,038.2 us | 26,687.9 us | 1,462.85 us | 9 KB | 1.00 |
-| Azrng parallel SELECT 1 | 16 | 1,364.7 us | 243.5 us | 13.35 us | 105.2 KB | N/A |
-| Local parallel SELECT 1 | 16 | N/A | N/A | N/A | N/A | N/A |
+| 模式 | Degree=4 | Degree=16 |
+|------|---------:|----------:|
+| Azrng | 6.84 ms | 8.51 ms |
+| Local Attach | 64.50 ms | 77.03 ms |
+| **Azrng 倍率** | **9.4x 快** | **9.1x 快** |
 
-**结论**:
-- Degree=4 时 Azrng 比 Local 快 **27倍** (630us vs 17ms)
-- Azrng 在 Degree=16 时表现稳定 (1.36ms)
-- Local Degree=16 失败 - 架构限制：每个连接创建独立 DuckDB 实例，16 并发导致 quack 服务器端口耗尽
+**结论**：高并发下 Azrng 优势显著。Local Attach 使用独立 DuckDB 实例，并发时有额外开销；Azrng 使用 HTTP 连接池，并发扩展性更好。
 
 ---
 
-## 6. PoolBench - 连接池 (Azrng Only)
+## 6. PoolBench - 连接池（仅 Azrng）
 
-| Method | Degree | Mean | Error | StdDev | Allocated |
-|--------|-------:|-----:|------:|-------:|----------:|
-| Azrng pool acquire + return | 4 | 543.6 us | 43.63 us | 11.33 us | 6.9 KB |
-| Azrng pool acquire + return | 16 | 550.3 us | 35.14 us | 9.13 us | 6.9 KB |
-| Azrng pool rent + dispose | 4 | 555.2 us | 235.06 us | 36.38 us | 7.09 KB |
-| Azrng pool rent + dispose | 16 | 553.1 us | 64.46 us | 16.74 us | 7.1 KB |
-| Azrng pool SELECT 1 | 4 | 1,091.4 us | 89.75 us | 13.89 us | 13.13 KB |
-| Azrng pool SELECT 1 | 16 | 1,080.8 us | 34.76 us | 5.38 us | 13.13 KB |
-| Azrng pool lease SELECT 1 | 4 | 1,087.0 us | 117.22 us | 30.44 us | 13.31 KB |
-| Azrng pool lease SELECT 1 | 16 | 1,093.5 us | 139.25 us | 36.16 us | 13.31 KB |
-| Azrng pool parallel SELECT 1 | 4 | 2,074.6 us | 2,263.46 us | 587.81 us | 54.05 KB |
-| Azrng pool parallel SELECT 1 | 16 | 2,853.7 us | 290.83 us | 75.53 us | 213.28 KB |
-| Azrng pool lease parallel SELECT 1 | 4 | 1,127.6 us | 109.99 us | 17.02 us | 56.62 KB |
-| Azrng pool lease parallel SELECT 1 | 16 | 2,909.6 us | 374.88 us | 58.01 us | 216.13 KB |
+| 操作 | Degree=4 | Degree=16 |
+|------|---------:|----------:|
+| Acquire + Return | 5.52 ms | 5.22 ms |
+| Rent + Dispose | 5.38 ms | 5.70 ms |
+| SELECT 1 | 10.89 ms | 10.74 ms |
+| Parallel SELECT 1 | 11.40 ms | 12.67 ms |
+| Lease SELECT 1 | 10.86 ms | 10.19 ms |
+| Lease Parallel SELECT 1 | 11.45 ms | 13.55 ms |
 
-**结论**: 
-- 连接池 acquire/return 约 540-555us
-- lease 模式在并行场景下表现更好 (1.1ms vs 2.1ms)
+**结论**：
+- 连接池获取/归还约 5ms
+- 执行查询约 10-13ms
+- 并发度从 4 到 16 性能基本稳定
+- Lease 模式与手动归还模式性能接近
 
 ---
 
@@ -171,90 +157,75 @@ ATTACH 模式的优势：
 
 ### Rows = 100
 
-| Method | Mean | Error | StdDev | Ratio | Allocated | Alloc Ratio |
-|--------|-----:|------:|-------:|------:|----------:|------------:|
-| Azrng batch insert | 1.864 ms | 0.506 ms | 0.028 ms | 0.003 | 35.66 KB | 0.12 |
-| Azrng paged batch insert | 1.880 ms | 0.359 ms | 0.020 ms | 0.003 | 35.66 KB | 0.12 |
-| Azrng per-row insert | 65.782 ms | 6.765 ms | 0.371 ms | 0.114 | 758.79 KB | 2.61 |
-| Local per-row insert | 579.537 ms | 586.787 ms | 32.164 ms | 1.002 | 290.7 KB | 1.00 |
+| 方法 | Mean | Ratio |
+|------|-----:|------:|
+| Azrng batch insert | 31.29 ms | 0.006x |
+| Azrng paged batch insert | 27.74 ms | 0.005x |
+| Azrng per-row insert | 1.20 s | 0.233x |
+| Local per-row insert | 5.16 s | 1.000x (baseline) |
 
 ### Rows = 1000
 
-| Method | Mean | Error | StdDev | Allocated |
-|--------|-----:|------:|-------:|----------:|
-| Azrng paged batch insert (BatchSize=100) | 11.361 ms | 0.939 ms | 0.052 ms | 327.34 KB |
-| Azrng batch insert (BatchSize=100) | 48.151 ms | 2.416 ms | 0.133 ms | 252 KB |
-| Azrng paged batch insert (BatchSize=500) | 90.319 ms | 36.454 ms | 1.998 ms | 261.31 KB |
-| Azrng per-row insert | 693.930 ms | 333.350 ms | 18.272 ms | 7561.42 KB |
-| Local per-row insert | N/A | N/A | N/A | N/A |
+| 方法 | BatchSize | Mean | Ratio |
+|------|----------|-----:|------:|
+| Azrng batch insert | 100 | 50.0 ms | 0.001x |
+| Azrng batch insert | 500 | 49.6 ms | 0.001x |
+| Azrng paged batch insert | 100 | 145.7 ms | 0.003x |
+| Azrng paged batch insert | 500 | 68.6 ms | 0.001x |
+| Azrng per-row insert | — | 14.57 s | 0.267x |
+| Local per-row insert | — | 55.49 s | 1.017x |
 
-**结论**:
-- 100行: Azrng 批量插入比逐行插入快 **35倍**，比 Local 快 **310倍**
-- 1000行: paged batch (BatchSize=100) 最快 (11.4ms)，比逐行插入快 **61倍**
-- Local 1000行插入因连接超时失败
-
----
-
-## 版本对比 (第一次 vs 第二次运行)
-
-| 项目 | 第一次运行 | 第二次运行 |
-|------|-----------|-----------|
-| BenchmarkDotNet | 0.14.0 | 0.15.8 |
-| Azrng.DuckDB.Quack | 1.0.0-beta1 | 1.0.0-beta2 |
-| Docker 资源 | 2 CPU / 4GB | 4 CPU / 8GB |
-
-### 性能变化
-
-| 测试项 | 第一次运行 | 第二次运行 | 变化 |
-|--------|-----------|-----------|------|
-| ConnectionBench (Azrng) | 828.9 us | 883.6 us | +6.6% |
-| ConnectionBench (Local) | 67.8 ms | 66.7 ms | -1.6% |
-| QueryBench (Azrng SELECT 1) | 536.4 us | 562.0 us | +4.8% |
-| QueryBench (Local SELECT 1) | 5.41 ms | 5.37 ms | -0.7% |
-| ResultSetBench 10k (Azrng) | 1.476 ms | 1.441 ms | -2.4% |
-| ResultSetBench 10k (Local) | 13.2 ms | 9.23 ms | -30% |
-| ConcurrencyBench Degree=4 (Azrng) | 731.1 us | 630.0 us | -13.8% |
-| ConcurrencyBench Degree=4 (Local) | 12.4 ms | 17.0 ms | +37% |
-
-**结论**: 性能基本稳定，小幅波动在正常范围内
+**结论**：
+- **批量插入 vs 逐行**：Azrng 批量插入比逐行快 **25-290 倍**（1000 行时：50ms vs 14.57s）
+- **Azrng vs Local 逐行**：Azrng 逐行比 Local 逐行快 **3.8-4.3 倍**
+- **BatchSize 影响**：1000 行时 BatchSize=500 的 paged batch（68.6ms）比 BatchSize=100（145.7ms）快 2 倍
 
 ---
 
 ## 总结
 
-### 三种查询模式性能对比
+### 三种模式查询延迟对比
 
-| 模式 | SELECT 1 | SELECT @a+@b | COUNT/SUM 10k | 推荐场景 |
-|------|----------|--------------|---------------|----------|
-| Local ATTACH | **54.75 us** | **122.58 us** | **164.15 us** | 高性能查询 |
-| Azrng (HTTP) | 550.09 us | 573.20 us | 661.20 us | 通用场景 |
-| Local quack_query | 5.754 ms | 6.078 ms | 5.867 ms | 兼容性场景 |
+| 查询 | Local Attach | Azrng | Local Query |
+|------|------------:|------:|------------:|
+| SELECT 1 | **0.22 ms** | 7.16 ms | 51.22 ms |
+| SELECT @a + @b | **0.46 ms** | 6.61 ms | 48.00 ms |
+| COUNT/SUM over 10k | **0.47 ms** | 8.38 ms | 56.32 ms |
 
 ### 各场景性能对比
 
-| 场景 | Azrng vs Local (quack_query) | Local ATTACH vs Azrng |
-|------|------------------------------|----------------------|
-| 连接建立 | ~75x 更快 | N/A (冷启动) |
-| 简单查询 | ~10x 更快 | ~10x 更快 |
-| 结果集读取 | ~6-10x 更快 | N/A |
-| 并发查询 | ~27x 更快 (Degree=4) | N/A |
-| 批量插入 | ~310x 更快 (100行) | N/A |
+| 场景 | 最优模式 | 说明 |
+|------|---------|------|
+| 查询延迟 | Local Attach | 亚毫秒级，比 Azrng 快 15-30 倍 |
+| 连接建立 | Azrng | 比 Local Attach 快 14% |
+| 结果集读取 | Azrng | 小结果集快 2.7 倍，大结果集接近 |
+| 并发查询 | Azrng | 比 Local Attach 快 9 倍 |
+| 批量插入 | Azrng Batch API | 比逐行插入快 25-290 倍 |
 
 ### 推荐配置
 
-1. **高性能场景**: 使用 Local ATTACH 模式，性能最优
-2. **通用场景**: 使用 Azrng，开箱即用，性能优秀
-3. **兼容性场景**: 使用 Local quack_query 模式，兼容旧代码
+1. **低延迟查询场景**：使用 Local Attach 模式，查询延迟最优（亚毫秒级）
+2. **通用场景**：使用 Azrng，无需 DuckDB 引擎和扩展，部署简单，性能优秀
+3. **高并发场景**：使用 Azrng + 连接池，并发扩展性好
+4. **批量写入场景**：使用 Azrng Batch API，性能远超逐行插入
+5. **兼容性场景**：使用 Local Query 模式，兼容旧代码
 
 ### Azrng 主要优势
-1. **连接复用**: 使用 HTTP 连接池，避免每次创建新连接
-2. **原生异步**: 全面支持 async/await
-3. **批量操作**: 内置 batch insert API
-4. **连接池**: 内置连接池和 lease 模式
-5. **稳定性**: 高并发场景下表现稳定
-6. **开箱即用**: 无需配置 ATTACH，自动处理连接
+
+1. **无需 DuckDB 引擎**：纯 C# 实现，部署简单
+2. **原生异步**：全面支持 async/await
+3. **批量操作**：内置 batch insert API（比逐行快 25-290 倍）
+4. **连接池**：内置连接池和 lease 模式
+5. **并发稳定**：高并发场景下表现稳定（9x 优于 Local Attach）
+
+### Local Attach 主要优势
+
+1. **查询延迟最低**：亚毫秒级，适合延迟敏感场景
+2. **原生协议**：使用 Quack 原生协议，协议效率高
+3. **查询下推**：DuckDB 自动将查询下推到服务器
 
 ### 已知限制
-- 内存分配比 Local 高 2-4x (HTTP 协议开销)
-- Local quack_query 模式在高并发 (16+) 时因端口耗尽失败
-- Local ATTACH 模式参数绑定需要使用 `?` 占位符
+
+- Azrng 内存分配比 Local Attach 高 2-7 倍（HTTP 协议开销）
+- Local Query 模式性能最慢（每次查询需经过 quack_query 函数包装）
+- Local Attach 模式在高并发时有额外开销（独立 DuckDB 实例）
