@@ -45,14 +45,14 @@ public class QueryBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
-        await _azrngConnection.OpenAsync();
-        _table = "bench_query_" + Guid.NewGuid().ToString("N")[..12];
-        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
-        await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
-
         _localAttachConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
         await _localAttachConnection.OpenAsync();
+        _table = "bench_query_" + Guid.NewGuid().ToString("N")[..12];
+        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
+        await ExecuteNonQueryAsync(_localAttachConnection, $"CREATE TABLE {_attachTable} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
+
+        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
+        await _azrngConnection.OpenAsync();
         _localQueryConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
         await _localQueryConnection.OpenAsync();
 
@@ -194,14 +194,14 @@ public class ResultSetBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
-        await _azrngConnection.OpenAsync();
-        _table = "bench_result_" + Guid.NewGuid().ToString("N")[..12];
-        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
-        await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, {Rows}) t(i)");
-
         _localAttachConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
         await _localAttachConnection.OpenAsync();
+        _table = "bench_result_" + Guid.NewGuid().ToString("N")[..12];
+        _attachTable = $"{Program.LocalCatalog}.main.{_table}";
+        await ExecuteNonQueryAsync(_localAttachConnection, $"CREATE TABLE {_attachTable} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, {Rows}) t(i)");
+
+        _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
+        await _azrngConnection.OpenAsync();
         _localQueryConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
         await _localQueryConnection.OpenAsync();
     }
@@ -227,8 +227,8 @@ public class ResultSetBench : IAsyncDisposable
     [GlobalCleanup]
     public async Task Cleanup()
     {
-        if (_azrngConnection is not null && !string.IsNullOrWhiteSpace(_table))
-            await ExecuteNonQueryAsync(_azrngConnection, $"DROP TABLE IF EXISTS {_table}");
+        if (_localAttachConnection is not null && !string.IsNullOrWhiteSpace(_attachTable))
+            await ExecuteNonQueryAsync(_localAttachConnection, $"DROP TABLE IF EXISTS {_attachTable}");
     }
 
     public async ValueTask DisposeAsync()
@@ -334,7 +334,7 @@ public class ConcurrencyBench : IAsyncDisposable
     private LocalQuackConnection[] _localAttachConnections = [];
     private LocalQuackConnection[] _localQueryConnections = [];
     private AzrngQuackConnection[] _azrngConnections = [];
-    private AzrngQuackConnection _setupConnection = null!;
+    private LocalQuackConnection _setupConnection = null!;
     private string _table = "";
     private string _attachTable = "";
 
@@ -344,11 +344,11 @@ public class ConcurrencyBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
-        _setupConnection = new AzrngQuackConnection(Program.ConnectionString);
+        _setupConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
         await _setupConnection.OpenAsync();
         _table = "bench_concurrency_" + Guid.NewGuid().ToString("N")[..12];
         _attachTable = $"{Program.LocalCatalog}.main.{_table}";
-        await ExecuteNonQueryAsync(_setupConnection, $"CREATE TABLE {_table} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
+        await ExecuteNonQueryAsync(_setupConnection, $"CREATE TABLE {_attachTable} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label FROM range(0, 100000) t(i)");
 
         _localAttachConnections = new LocalQuackConnection[Degree];
         _localQueryConnections = new LocalQuackConnection[Degree];
@@ -402,8 +402,8 @@ public class ConcurrencyBench : IAsyncDisposable
     [GlobalCleanup]
     public async Task Cleanup()
     {
-        if (_setupConnection is not null && !string.IsNullOrWhiteSpace(_table))
-            await ExecuteNonQueryAsync(_setupConnection, $"DROP TABLE IF EXISTS {_table}");
+        if (_setupConnection is not null && !string.IsNullOrWhiteSpace(_attachTable))
+            await ExecuteNonQueryAsync(_setupConnection, $"DROP TABLE IF EXISTS {_attachTable}");
     }
 
     public async ValueTask DisposeAsync()
@@ -567,6 +567,7 @@ public class InsertBench : IAsyncDisposable
 {
     private LocalQuackConnection _localConnection = null!;
     private AzrngQuackConnection _azrngConnection = null!;
+    private LocalQuackConnection _setupConnection = null!;
     private string _localTable = "";
     private string _azrngTable = "";
 
@@ -579,14 +580,19 @@ public class InsertBench : IAsyncDisposable
     [GlobalSetup]
     public async Task Setup()
     {
+        _setupConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await _setupConnection.OpenAsync();
+        _localTable = "bench_local_" + Guid.NewGuid().ToString("N")[..12];
+        _azrngTable = "bench_azrng_" + Guid.NewGuid().ToString("N")[..12];
+        var attachLocalTable = $"{Program.LocalCatalog}.main.{_localTable}";
+        var attachAzrngTable = $"{Program.LocalCatalog}.main.{_azrngTable}";
+        await ExecuteNonQueryAsync(_setupConnection, $"CREATE TABLE {attachLocalTable} (id INTEGER, label VARCHAR)");
+        await ExecuteNonQueryAsync(_setupConnection, $"CREATE TABLE {attachAzrngTable} (id INTEGER, label VARCHAR)");
+
         _localConnection = new LocalQuackConnection(Program.LocalQueryConnectionString);
         await _localConnection.OpenAsync();
         _azrngConnection = new AzrngQuackConnection(Program.ConnectionString);
         await _azrngConnection.OpenAsync();
-        _localTable = "bench_local_" + Guid.NewGuid().ToString("N")[..12];
-        _azrngTable = "bench_azrng_" + Guid.NewGuid().ToString("N")[..12];
-        await ExecuteNonQueryAsync(_localConnection, $"CREATE TABLE {_localTable} (id INTEGER, label VARCHAR)");
-        await ExecuteNonQueryAsync(_azrngConnection, $"CREATE TABLE {_azrngTable} (id INTEGER, label VARCHAR)");
     }
 
     [Benchmark(Baseline = true, Description = "Local per-row insert")]
@@ -634,14 +640,21 @@ public class InsertBench : IAsyncDisposable
     [GlobalCleanup]
     public async Task Cleanup()
     {
-        await ExecuteNonQueryAsync(_localConnection, $"DROP TABLE IF EXISTS {_localTable}");
-        await ExecuteNonQueryAsync(_azrngConnection, $"DROP TABLE IF EXISTS {_azrngTable}");
+        if (_setupConnection is not null)
+        {
+            var attachLocalTable = $"{Program.LocalCatalog}.main.{_localTable}";
+            var attachAzrngTable = $"{Program.LocalCatalog}.main.{_azrngTable}";
+            await ExecuteNonQueryAsync(_setupConnection, $"DROP TABLE IF EXISTS {attachLocalTable}");
+            await ExecuteNonQueryAsync(_setupConnection, $"DROP TABLE IF EXISTS {attachAzrngTable}");
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         await _localConnection.DisposeAsync();
         await _azrngConnection.DisposeAsync();
+        if (_setupConnection is not null)
+            await _setupConnection.DisposeAsync();
     }
 
     private static async Task InsertOneAsync(DbConnection connection, string tableName, int value)
