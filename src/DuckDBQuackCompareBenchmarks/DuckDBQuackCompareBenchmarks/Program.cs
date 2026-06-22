@@ -10,8 +10,7 @@ namespace DuckDBQuackCompareBenchmarks;
 internal static class Program
 {
     public static readonly string ConnectionString =
-        Environment.GetEnvironmentVariable("QUACK_PROTOCOL_CONNECTION_STRING")
-        ?? "Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true";
+        GetConnectionString();
 
     private static readonly QuackConnectionConfig LocalConfig = QuackConnectionStringParser.Parse(ConnectionString);
 
@@ -43,13 +42,45 @@ internal static class Program
         BenchmarkSwitcher.FromTypes(new[]
         {
             typeof(ConnectionBench),
+            typeof(ColdQueryBench),
             typeof(QueryBench),
             typeof(ResultSetBench),
             typeof(ReaderAccessBench),
             typeof(ConcurrencyBench),
             typeof(PoolBench),
-            typeof(InsertBench),
+            typeof(InsertPerRowBench),
+            typeof(InsertBatchBench),
         }).Run(args, config);
+    }
+
+    private static string GetConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("QUACK_PROTOCOL_CONNECTION_STRING")
+            ?? "Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true;Catalog=test";
+
+        if (!HasExplicitCatalog(connectionString))
+        {
+            throw new InvalidOperationException(
+                "Benchmark connection string must explicitly include Catalog=... or Database=... so all clients query the same remote catalog.");
+        }
+
+        return connectionString;
+    }
+
+    private static bool HasExplicitCatalog(string connectionString)
+    {
+        if (connectionString.StartsWith("quack:", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.StartsWith("jdbc:quack:", StringComparison.OrdinalIgnoreCase))
+        {
+            return connectionString.Contains("catalog=", StringComparison.OrdinalIgnoreCase) ||
+                   connectionString.Contains("database=", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return connectionString
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(static part =>
+                part.StartsWith("Catalog=", StringComparison.OrdinalIgnoreCase) ||
+                part.StartsWith("Database=", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string BuildLocalConnectionString(bool attach)

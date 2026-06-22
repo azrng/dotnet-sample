@@ -84,7 +84,9 @@ public static class QuackProtocolConnectionStringParser
         var host = props.GetValueOrDefault("Host", props.GetValueOrDefault("Server", ""));
         var portText = props.GetValueOrDefault("Port", QuackProtocolConfig.DefaultPort.ToString());
         var token = props.GetValueOrDefault("Token", props.GetValueOrDefault("Password", ""));
-        var catalog = props.GetValueOrDefault("Catalog");
+        string? catalog = null;
+        if (!props.TryGetValue("Catalog", out catalog))
+            props.TryGetValue("Database", out catalog);
         var disableSslText = props.GetValueOrDefault("DisableSsl", "false");
         var timeoutText = props.GetValueOrDefault("Timeout", props.GetValueOrDefault("TimeoutSeconds", "30"));
 
@@ -127,7 +129,7 @@ public static class QuackProtocolConnectionStringParser
             throw new FormatException($"Unsupported URI scheme: {parsed.Scheme}");
 
         var token = GetQueryValue(parsed.Query, "token") ?? GetQueryValue(parsed.Query, "password") ?? "";
-        var catalog = GetQueryValue(parsed.Query, "catalog");
+        var catalog = GetQueryValue(parsed.Query, "catalog") ?? GetQueryValue(parsed.Query, "database");
         var tls = GetQueryValue(parsed.Query, "tls");
         var disableSsl = tls != null && !ParseBoolean(tls, "tls");
 

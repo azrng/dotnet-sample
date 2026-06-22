@@ -15,6 +15,8 @@ public sealed class QuackDataProvider : IDisposable
     private const string ExtensionVersion = "v1.5.3";
     private const string HttpfsExtensionFileName = "httpfs.duckdb_extension";
     private const string QuackExtensionFileName = "quack.duckdb_extension";
+    private static readonly object ExtensionInstallLock = new();
+    private static readonly HashSet<string> InstalledExtensions = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly DuckDBConnection _connection;
     private readonly string _uri;
@@ -22,6 +24,7 @@ public sealed class QuackDataProvider : IDisposable
     private readonly bool _disableSsl;
     private readonly bool _useAttach;
     private readonly string? _extensionDirectory;
+    private readonly bool _useRemoteCatalog;
     // DuckDBConnection 不是面向并发初始化/释放设计的，这里保护附加和释放状态。
     private readonly object _syncRoot = new();
     private string? _attachedCatalog;
@@ -65,6 +68,7 @@ public sealed class QuackDataProvider : IDisposable
         _disableSsl = disableSsl;
         _useAttach = attach;
         _extensionDirectory = extensionDirectory;
+        _useRemoteCatalog = !_useAttach && !string.Equals(_attachedCatalog, "remote", StringComparison.OrdinalIgnoreCase);
 
         _connection = new DuckDBConnection("Data Source=:memory:;allow_unsigned_extensions=true");
         _connection.Open();
@@ -352,6 +356,9 @@ public sealed class QuackDataProvider : IDisposable
     public string BuildQuackQuerySql(string sql)
     {
         var normalized = SqlNormalizer.Normalize(sql);
+        if (_useRemoteCatalog)
+            normalized = $"USE \"{EscapeIdentifier(_attachedCatalog ?? "remote")}\"; {normalized}";
+
         return $"SELECT * FROM quack_query('{EscapeSqlLiteral(_uri)}', '{EscapeSqlLiteral(normalized)}', token := '{EscapeSqlLiteral(_token)}', disable_ssl := {ToDuckDbBoolean(_disableSsl)})";
     }
 
@@ -426,14 +433,20 @@ public sealed class QuackDataProvider : IDisposable
 
     private void LoadExtension(string extensionPath)
     {
-        // 按本地文件路径加载：优先 LOAD（扩展已安装时更快），失败则 FORCE INSTALL 后再 LOAD。
+        // 每个 DuckDB 连接都必须 LOAD；FORCE INSTALL 只在进程内首次 LOAD 失败时执行。
         try
         {
             Execute($"LOAD '{extensionPath}';");
+            MarkExtensionInstalled($"path:{extensionPath}");
         }
         catch
         {
-            Execute($"FORCE INSTALL '{extensionPath}'; LOAD '{extensionPath}';");
+            var loadedInCurrentConnection = EnsureExtensionInstalled(
+                $"path:{extensionPath}",
+                $"FORCE INSTALL '{extensionPath}';",
+                $"LOAD '{extensionPath}';");
+            if (!loadedInCurrentConnection)
+                Execute($"LOAD '{extensionPath}';");
         }
     }
 
@@ -448,10 +461,47 @@ public sealed class QuackDataProvider : IDisposable
         try
         {
             Execute($"LOAD {extensionName};");
+            MarkExtensionInstalled($"name:{extensionName}");
         }
         catch
         {
-            Execute($"FORCE INSTALL {extensionName}; LOAD {extensionName};");
+            var loadedInCurrentConnection = EnsureExtensionInstalled(
+                $"name:{extensionName}",
+                $"FORCE INSTALL {extensionName};",
+                $"LOAD {extensionName};");
+            if (!loadedInCurrentConnection)
+                Execute($"LOAD {extensionName};");
+        }
+    }
+
+    private bool EnsureExtensionInstalled(string cacheKey, string installSql, string loadSql)
+    {
+        lock (ExtensionInstallLock)
+        {
+            if (InstalledExtensions.Contains(cacheKey))
+                return false;
+
+            // 其他连接可能已经完成安装；在锁内先重试 LOAD，避免不必要的 FORCE INSTALL。
+            try
+            {
+                Execute(loadSql);
+                InstalledExtensions.Add(cacheKey);
+                return true;
+            }
+            catch
+            {
+                Execute(installSql);
+                InstalledExtensions.Add(cacheKey);
+                return false;
+            }
+        }
+    }
+
+    private static void MarkExtensionInstalled(string cacheKey)
+    {
+        lock (ExtensionInstallLock)
+        {
+            InstalledExtensions.Add(cacheKey);
         }
     }
 
@@ -529,6 +579,11 @@ public sealed class QuackDataProvider : IDisposable
     private static string EscapeSqlLiteral(string value)
     {
         return value.Replace("\\", "\\\\").Replace("'", "''");
+    }
+
+    private static string EscapeIdentifier(string value)
+    {
+        return value.Replace("\"", "\"\"");
     }
 
     private static string ToDuckDbBoolean(bool value) => value ? "true" : "false";

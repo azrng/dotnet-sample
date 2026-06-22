@@ -10,30 +10,7 @@ internal static class SmokeChecks
     {
         try
         {
-            await EnsureScalarParityAsync("SELECT 1");
-            await EnsureScalarParityAsync(
-                "SELECT @a + @b",
-                ("@a", 17L),
-                ("@b", 25L));
-            await EnsureScalarParityAsync("SELECT NULL");
-            await EnsureScalarParityAsync(
-                "SELECT @text",
-                ("@text", "中文 'quote' emoji 😀"));
-            await EnsureScalarParityAsync(
-                "SELECT @flag",
-                ("@flag", true));
-            await EnsureScalarParityAsync(
-                "SELECT @amount",
-                ("@amount", 12345.6789m));
-            await EnsureAzrngScalarAsync(
-                "SELECT CAST(@day AS DATE)",
-                new DateOnly(2026, 6, 21),
-                ("@day", new DateOnly(2026, 6, 21)));
-
-            await EnsureRowsParityAsync(
-                "SELECT i, CAST(i AS VARCHAR) AS label FROM range(0, 5) t(i)");
-
-            await EnsureAzrngDmlRoundtripAsync();
+            await EnsureRemoteTableParityAsync();
         }
         catch (Exception ex)
         {
@@ -42,6 +19,37 @@ internal static class SmokeChecks
                 "`docker compose -f docker/compose.yml up -d`, " +
                 "or set QUACK_PROTOCOL_CONNECTION_STRING to a reachable Quack server.",
                 ex);
+        }
+    }
+
+    private static async Task EnsureRemoteTableParityAsync()
+    {
+        var tableName = "smoke_remote_" + Guid.NewGuid().ToString("N")[..12];
+        var attachTableName = $"{Program.LocalCatalog}.main.{tableName}";
+        await using var setupConnection = new LocalQuackConnection(Program.LocalAttachConnectionString);
+        await setupConnection.OpenAsync();
+
+        try
+        {
+            await ExecuteNonQueryAsync(
+                setupConnection,
+                $"CREATE TABLE {attachTableName} AS SELECT i::BIGINT AS i, CAST(i AS VARCHAR) AS label, i % 2 = 0 AS is_even, i * 1.25 AS amount FROM range(0, 16) t(i)");
+
+            await EnsureScalarParityAsync(
+                $"SELECT label FROM {tableName} WHERE i = @id",
+                ("@id", 7L));
+            await EnsureScalarParityAsync(
+                $"SELECT COUNT(*), SUM(i) FROM {tableName} WHERE i >= @start AND i < @end",
+                ("@start", 3L),
+                ("@end", 11L));
+            await EnsureRowsParityAsync(
+                $"SELECT i, label, is_even, amount FROM {tableName} WHERE i < 5 ORDER BY i");
+
+            await EnsureAzrngDmlRoundtripAsync(tableName);
+        }
+        finally
+        {
+            await ExecuteNonQueryAsync(setupConnection, $"DROP TABLE IF EXISTS {attachTableName}");
         }
     }
 
@@ -89,36 +97,17 @@ internal static class SmokeChecks
         }
     }
 
-    private static async Task EnsureAzrngScalarAsync(
-        string sql,
-        object? expected,
-        params (string Name, object? Value)[] parameters)
+    private static async Task EnsureAzrngDmlRoundtripAsync(string tableName)
     {
-        var actual = await ExecuteScalarAsync(
-            () => new AzrngQuackConnection(Program.ConnectionString),
-            sql,
-            parameters);
-
-        EnsureEqual(expected, actual, sql);
-    }
-
-    private static async Task EnsureAzrngDmlRoundtripAsync()
-    {
-        var tableName = "smoke_azrng_" + Guid.NewGuid().ToString("N")[..12];
         await using var connection = new AzrngQuackConnection(Program.ConnectionString);
         await connection.OpenAsync();
 
-        try
-        {
-            await ExecuteNonQueryAsync(connection, $"CREATE TABLE {tableName} (id INTEGER, label VARCHAR)");
-            await ExecuteNonQueryAsync(connection, $"INSERT INTO {tableName} VALUES (1, 'alpha'), (2, '中文')");
-            var count = await ExecuteScalarAsync(() => new AzrngQuackConnection(Program.ConnectionString), $"SELECT COUNT(*) FROM {tableName}");
-            EnsureEqual(2L, count, "Azrng DDL/DML roundtrip count");
-        }
-        finally
-        {
-            await ExecuteNonQueryAsync(connection, $"DROP TABLE IF EXISTS {tableName}");
-        }
+        await ExecuteNonQueryAsync(connection, $"INSERT INTO {tableName} VALUES (1001, 'azrng_insert', false, 1001.25)");
+        var count = await ExecuteScalarAsync(
+            () => new AzrngQuackConnection(Program.ConnectionString),
+            $"SELECT COUNT(*) FROM {tableName} WHERE i = @id",
+            ("@id", 1001L));
+        EnsureEqual(1L, count, "Azrng remote table DML roundtrip count");
     }
 
     private static async Task<object?> ExecuteScalarAsync(

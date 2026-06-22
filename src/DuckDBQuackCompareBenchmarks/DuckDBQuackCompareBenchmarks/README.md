@@ -40,17 +40,17 @@ docker compose -f docker/compose.yml ps
 等待容器状态显示 `healthy`。默认连接字符串：
 
 ```text
-Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true
+Host=localhost;Port=9494;Token=E7231CE2CE78902BA280F3B9158BEB30;DisableSsl=true;Catalog=test
 ```
 
 如需覆盖，设置环境变量 `QUACK_PROTOCOL_CONNECTION_STRING`：
 
 ```bash
 # Linux / macOS
-export QUACK_PROTOCOL_CONNECTION_STRING="Host=localhost;Port=9494;Token=YOUR_TOKEN;DisableSsl=true"
+export QUACK_PROTOCOL_CONNECTION_STRING="Host=localhost;Port=9494;Token=YOUR_TOKEN;DisableSsl=true;Catalog=test"
 
 # Windows PowerShell
-$env:QUACK_PROTOCOL_CONNECTION_STRING = "Host=localhost;Port=9494;Token=YOUR_TOKEN;DisableSsl=true"
+$env:QUACK_PROTOCOL_CONNECTION_STRING = "Host=localhost;Port=9494;Token=YOUR_TOKEN;DisableSsl=true;Catalog=test"
 ```
 
 ## 预下载扩展（可选）
@@ -105,11 +105,12 @@ BenchmarkDotNet 会将 Markdown 和 JSON 报告输出到 `BenchmarkDotNet.Artifa
 
 | 分组 | Azrng | Local Attach | Local Query | 目的 |
 |------|-------|-------------|-------------|------|
-| 连接 | `Azrng_OpenDispose` | `LocalAttach_OpenDispose` | `LocalQuery_OpenDispose` | 连接建立/销毁开销；Local 包含 DuckDB 引擎初始化和扩展加载 |
-| 查询 | `Azrng_PointLookup`, `Azrng_Aggregate10k` | `LocalAttach_PointLookup`, `LocalAttach_Aggregate10k` | `LocalQuery_PointLookup`, `LocalQuery_Aggregate10k` | 同一远端表上的 warm query 延迟 |
+| 初始化 | `Azrng_OpenDispose` | `LocalAttach_OpenDispose` | `LocalQuery_OpenDispose` | 客户端初始化/销毁开销；Local 包含 DuckDB 引擎初始化和扩展加载 |
+| 冷查询 | `Azrng_ColdEqualityFilter` | `LocalAttach_ColdEqualityFilter` | `LocalQuery_ColdEqualityFilter` | 打开连接后立即执行一次远端表过滤查询 |
+| 查询 | `Azrng_EqualityFilter`, `Azrng_Aggregate10k` | `LocalAttach_EqualityFilter`, `LocalAttach_Aggregate10k` | `LocalQuery_EqualityFilter`, `LocalQuery_Aggregate10k` | 同一远端表上的 warm query 延迟 |
 | 参数 | `Azrng_ParameterizedAggregate` | `LocalAttach_ParameterizedAggregate` | `LocalQuery_ParameterizedAggregate` | 参数化远端查询 |
 | 结果集 | `Azrng_ReadRows` | `LocalAttach_ReadRows` | `LocalQuery_ReadRows` | 同一远端表的读取吞吐量 |
-| 读取器 | `Azrng_TypedGetters` 等 | — | — | 读取器访问方式对比 |
+| 读取器 | `Azrng_TypedGetters` 等 | — | — | 同一远端表上的读取器访问方式对比 |
 | 并发 | `Azrng_ParallelQueries` | `LocalAttach_ParallelQueries` | `LocalQuery_ParallelQueries` | 独立连接上的并行远端查询性能 |
 
 查询、结果集、并发分组都会在 `GlobalSetup` 中完成连接打开、Local 扩展加载、ATTACH 以及远端测试表准备。单个 benchmark 方法只测 warm connection 上的查询执行路径。
@@ -118,8 +119,9 @@ BenchmarkDotNet 会将 Markdown 和 JSON 报告输出到 `BenchmarkDotNet.Artifa
 
 | 分组 | 基准测试 | 目的 |
 |------|---------|------|
-| 连接池 | `AzrngPool_AcquireReturn`, `AzrngPool_RentDispose`, `AzrngPool_Select1`, `AzrngPool_LeaseSelect1`, `AzrngPool_ParallelSelect1`, `AzrngPool_LeaseParallelSelect1` | 手动归还 vs lease 模式连接池开销 |
-| 批量插入 | `Azrng_BatchInsert`, `Azrng_PagedBatchInsert` vs `Azrng_PerRowInsert` 和 `Local_PerRowInsert` | 批量 API 收益及 batch size 影响 |
+| 连接池 | `AzrngPool_AcquireReturn`, `AzrngPool_RentDispose`, `AzrngPool_EqualityFilter`, `AzrngPool_LeaseEqualityFilter`, `AzrngPool_ParallelEqualityFilter`, `AzrngPool_LeaseParallelEqualityFilter` | 手动归还 vs lease 模式连接池开销，以及连接池复用下的远端表过滤查询性能 |
+| 逐行插入 | `Azrng_PerRowInsert` vs `Local_PerRowInsert` | 逐行写入性能 |
+| 批量插入 | `Azrng_BatchInsert`, `Azrng_PagedBatchInsert` | 批量 API 收益及 batch size 影响 |
 
 > **说明**：连接池和批量插入分组不是严格的 API 对等测试。Local 实现不包含等效的连接池或批量插入辅助方法。
 

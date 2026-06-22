@@ -20,6 +20,22 @@ public class QuackProtocolConnectionStringParserTests
         Assert.Equal("http://localhost:9494/quack", config.Endpoint.ToString());
     }
 
+    [Fact]
+    public void Parse_KeyValue_WithDatabase_UsesDatabaseAsCatalog()
+    {
+        var config = QuackProtocolConnectionStringParser.Parse("Host=localhost;Port=9494;Token=sample-token;Database=test;DisableSsl=true");
+
+        Assert.Equal("test", config.Catalog);
+    }
+
+    [Fact]
+    public void Parse_QuackUri_WithDatabase_UsesDatabaseAsCatalog()
+    {
+        var config = QuackProtocolConnectionStringParser.Parse("quack://demo.example?token=abc&database=test");
+
+        Assert.Equal("test", config.Catalog);
+    }
+
     /// <summary>
     /// Parse KeyValue WithHttps
     /// </summary>
