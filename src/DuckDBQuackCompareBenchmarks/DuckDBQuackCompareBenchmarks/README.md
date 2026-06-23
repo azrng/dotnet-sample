@@ -88,18 +88,88 @@ dotnet build src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.slnx 
 dotnet run -c Release --project src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.csproj
 ```
 
-运行子集：
+> ⚠️ **不带参数会卡在交互菜单**。`BenchmarkSwitcher` 在没有 `--filter` 时会列出 8 个 benchmark 类
+> 等待输入。CI / 脚本运行时务必带上 `--filter "*"` 跑全量，或指定子集（见下）。
+
+### 命令行参数
+
+参数透传给 BenchmarkDotNet，外加一个自定义开关：
+
+| 参数 | 作用 |
+|------|------|
+| （无） | 进入 BenchmarkSwitcher 交互菜单（**脚本/CI 不要这样用**）|
+| `--smoke-only` | 仅冒烟测试：验证三种模式连通性与结果一致性，**不运行任何基准**，几秒返回 |
+| `--filter "*"` | 运行全部 benchmark |
+| `--filter "*Query*"` | 按类名 glob 过滤；多个用空格分隔，如 `--filter "*Query*" "*Pool*"` |
+| `--filter "*Insert*"` | 仅跑插入类（逐行/批量）|
+| `--list flat` | 列出所有 benchmark 不运行 |
 
 ```bash
-# 仅冒烟测试（验证连通性，不运行基准）
+# 仅冒烟测试（验证连通性，不运行基准，几秒返回）
 dotnet run -c Release --project ... -- --smoke-only
+
+# 跑全部基准（脚本/CI 推荐）
+dotnet run -c Release --project ... -- --filter "*"
 
 # 按名称过滤
 dotnet run -c Release --project ... -- --filter "*Query*"
 dotnet run -c Release --project ... -- --filter "*Pool*"
 ```
 
-BenchmarkDotNet 会将 Markdown 和 JSON 报告按运行时间戳归档到 `BenchmarkDotNet.Artifacts/run-yyyyMMdd-HHmmss/results/`，每次运行独立保留、不互相覆盖。
+### 全量运行较慢，建议分批
+
+全量 9 个 benchmark 在远端服务上约需 15-30 分钟，瓶颈在 `InsertPerRowBench`（逐行插入 1000 行
+单次约 9 秒 × 多次迭代）。逐行/批量插入两个类合计可能超过单次命令的合理超时上限。
+
+建议按耗时分组分批跑，每批一次 `dotnet run`：
+
+```bash
+# 批次 1：快速类（连接/冷查/查询/结果集/读取器/并发/连接池），约 5-10 分钟
+dotnet run -c Release --project ... -- --filter "*ConnectionBench*" "*ColdQueryBench*" "*QueryBench*" "*ResultSetBench*" "*ReaderAccessBench*" "*ConcurrencyBench*" "*PoolBench*"
+
+# 批次 2：插入类（耗时最长），约 5-15 分钟
+dotnet run -c Release --project ... -- --filter "*Insert*"
+```
+
+> 同一次 `dotnet run` 内 benchmark 类的输出归档到**同一个**时间戳目录；
+> 分批跑会产生多个 `run-yyyyMMdd-HHmmss/` 目录，汇总报告时需跨目录合并。
+
+### 连接串与环境变量
+
+连接串只认环境变量 `QUACK_PROTOCOL_CONNECTION_STRING`（见上方"启动服务器"一节）。
+**必须显式包含 `Catalog=...` 或 `Database=...`**，否则 `Program.cs` 会直接报错退出——
+强制显式 catalog 是为了让三种模式查询同一远端目录、结果可比。
+
+环境变量传递注意点（踩过的坑）：
+
+- **Bash 内联 `set` / `export` 不一定透传到 `dotnet` 子进程**，建议用 cmd batch 或 PowerShell 脚本：
+  ```bat
+  :: run.bat（Windows cmd）
+  @echo off
+  set "QUACK_PROTOCOL_CONNECTION_STRING=Host=172.16.100.26;Port=9494;Token=YOUR_TOKEN;Catalog=test"
+  dotnet run -c Release --project src\DuckDBQuackCompareBenchmarks\DuckDBQuackCompareBenchmarks\DuckDBQuackCompareBenchmarks.csproj -- --filter "*"
+  ```
+  ```powershell
+  # run.ps1（Windows PowerShell）
+  $env:QUACK_PROTOCOL_CONNECTION_STRING = "Host=172.16.100.26;Port=9494;Token=YOUR_TOKEN;Catalog=test"
+  dotnet run -c Release --project src/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks/DuckDBQuackCompareBenchmarks.csproj -- --filter "*"
+  ```
+- `dotnet` 把进度信息写到 **stderr**，PowerShell 若开 `$ErrorActionPreference = 'Stop'` 会把进度
+  当错误中断。用 `cmd /c "... 2>&1"` 合并流，或把 `$ErrorActionPreference` 设为 `Continue`。
+
+### 报告输出
+
+BenchmarkDotNet 会将 Markdown 和 JSON 报告按运行时间戳归档到
+`BenchmarkDotNet.Artifacts/run-yyyyMMdd-HHmmss/results/`，每次运行独立保留、不互相覆盖。
+每个 benchmark 类生成 `*-report-github.md`（人类可读表格）和 `*-report-full-compressed.json`。
+
+汇总到单一报告时，建议文件名带日期（如 `BENCHMARK_RESULTS_20260623.md`）以区分历史、避免覆盖。
+
+### 远端服务抖动会导致部分项 NA
+
+若运行期间远端服务瞬时不可达（`Could not connect to server` HTTP POST 失败），相关 benchmark 的
+`GlobalSetup`/`GlobalCleanup`（建表/删表）会失败，该项在报告里显示 `NA`。这是基准对远端稳定性
+敏感所致，**非查询本身性能问题**——稳定网络后重跑该类即可补齐数据。
 
 ## 基准测试分组
 
