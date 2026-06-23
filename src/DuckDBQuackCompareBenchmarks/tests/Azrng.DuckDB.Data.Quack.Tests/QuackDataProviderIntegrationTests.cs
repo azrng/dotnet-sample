@@ -54,7 +54,9 @@ public class QuackDataProviderIntegrationTests : IDisposable
         Assert.NotEmpty(results);
         Assert.Equal(2, results.Count); // header + 1 row
         Assert.Equal("test_col", results[0][0]);
-        Assert.Equal(1L, results[1][0]);
+        // DuckDB 把无类型上下文的整数字面量推断为 INTEGER(32位)，经 ATTACH 远端返回 Int32。
+        // 归一化为 long 比较，避免对列的物理存储类型做强假设。
+        Assert.Equal(1L, Convert.ToInt64(results[1][0]));
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public class QuackDataProviderIntegrationTests : IDisposable
             [new DuckDBParameter { Value = 42 }]);
 
         Assert.NotEmpty(results);
-        Assert.Equal(42L, results[1][0]);
+        Assert.Equal(42L, Convert.ToInt64(results[1][0]));
     }
 
     [Fact]
@@ -81,7 +83,7 @@ public class QuackDataProviderIntegrationTests : IDisposable
             new { val = 42 });
 
         Assert.NotEmpty(results);
-        Assert.Equal(42L, results[1][0]);
+        Assert.Equal(42L, Convert.ToInt64(results[1][0]));
     }
 
     [Fact]
@@ -118,7 +120,7 @@ public class QuackDataProviderIntegrationTests : IDisposable
 
         var result = _provider!.ExecuteScalar("SELECT 42");
 
-        Assert.Equal(42L, result);
+        Assert.Equal(42L, Convert.ToInt64(result));
     }
 
     [Fact]
@@ -129,7 +131,7 @@ public class QuackDataProviderIntegrationTests : IDisposable
         // 使用 @paramName 形式，内部自动转换
         var result = _provider!.ExecuteScalar("SELECT @val", new { val = 99 });
 
-        Assert.Equal(99L, result);
+        Assert.Equal(99L, Convert.ToInt64(result));
     }
 
     [Fact]
@@ -141,9 +143,9 @@ public class QuackDataProviderIntegrationTests : IDisposable
         var r2 = _provider.ExecuteScalar("SELECT 2");
         var r3 = _provider.ExecuteScalar("SELECT 3");
 
-        Assert.Equal(1L, r1);
-        Assert.Equal(2L, r2);
-        Assert.Equal(3L, r3);
+        Assert.Equal(1L, Convert.ToInt64(r1));
+        Assert.Equal(2L, Convert.ToInt64(r2));
+        Assert.Equal(3L, Convert.ToInt64(r3));
     }
 
     [Fact]

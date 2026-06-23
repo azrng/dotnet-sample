@@ -78,8 +78,13 @@ public sealed class QuackProtocolIntegrationTests
     [Fact]
     public async Task ExecuteReader_InvalidToken_ThrowsProtocolException()
     {
-        var badConnectionString = "Host=localhost;Port=9494;Token=INVALID_TOKEN_12345;DisableSsl=true";
-        await using var connection = new QuackConnection(badConnectionString);
+        // 用真实可达的 host/port + 坏 token：这样能建到服务端的 TCP 连接，
+        // 由服务端在认证阶段拒绝 token，抛出预期的 QuackProtocolException。
+        // （此前硬编码 localhost，本机无服务时会被连接拒绝抛 HttpRequestException，
+        // 到不了 token 校验，断言失败。）
+        var baseConfig = QuackProtocolConfig.FromConnectionString(_options.ConnectionString);
+        var badConfig = baseConfig with { Token = "INVALID_TOKEN_12345" };
+        await using var connection = new QuackConnection(badConfig);
         await Assert.ThrowsAsync<QuackProtocolException>(() => connection.OpenAsync());
     }
 
