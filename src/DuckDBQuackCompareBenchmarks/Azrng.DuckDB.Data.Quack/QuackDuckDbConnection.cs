@@ -125,9 +125,8 @@ public sealed class QuackDuckDbConnection : DbConnection
     protected override DbCommand CreateDbCommand()
     {
         EnsureOpen();
-        if (_config.Attach)
-            return _provider!.Connection.CreateCommand();
-
+        // 统一经 QuackDbCommand：ATTACH 读查询由此走 quack_query 远端执行（规避 quack 扩展 v1.5.3
+        // 的下推丢失与每查询 schema 往返）；ATTACH 写/DDL 与 quack_query 模式在 CreateInnerCommand 内分流。
         return new QuackDbCommand(_provider!.Connection, _provider);
     }
 
@@ -182,6 +181,9 @@ internal sealed class QuackDbCommand : DbCommand
     private string _commandText = string.Empty;
     private int _commandTimeout = 30;
     private static readonly Regex PlaceholderPattern = new(@"[@$]\w+", RegexOptions.CultureInvariant);
+    // ATTACH 远端读路径：单次扫描同时匹配位置参数 ? 与命名参数 @$name；Regex.Replace 不重扫替换串，
+    // 故已内联的字面量不会被二次误伤。
+    private static readonly Regex RemoteReadParamPattern = new(@"\?|[@$]\w+", RegexOptions.CultureInvariant);
 
     public QuackDbCommand(DuckDBConnection innerConnection, QuackDataProvider provider)
     {
@@ -250,9 +252,15 @@ internal sealed class QuackDbCommand : DbCommand
         _provider.EnsureReady();
         var command = _innerConnection.CreateCommand();
         
-        if (_provider.UseAttachMode())
+        if (_provider.UseAttachMode() && IsRemoteReadQuery(_commandText))
         {
-            // ATTACH 模式：使用原生参数绑定，SQL 直接执行
+            // ATTACH 读查询走 quack_query 远端执行：规避 quack 扩展 v1.5.3 的下推丢失
+            // （WHERE 不下推、整表拉回本地筛）与每查询挂载表 schema/metadata 往返。
+            SetCommandText(command, _provider.BuildAttachRemoteReadSql(BuildRemoteReadSql()));
+        }
+        else if (_provider.UseAttachMode())
+        {
+            // ATTACH 写/DDL：原生参数绑定，SQL 直接在挂载表上执行
             command.CommandText = _commandText;
             foreach (QuackDbParameter parameter in _parameters)
             {
@@ -295,6 +303,66 @@ internal sealed class QuackDbCommand : DbCommand
             placeholderToParameter.TryGetValue(match.Value, out var parameter)
                 ? FormatParameterValue(parameter.Value)
                 : match.Value);
+    }
+
+    /// <summary>
+    /// ATTACH 远端读路径的参数内联：单次正则扫描同时替换位置参数 <c>?</c> 与命名参数 <c>@$name</c>。
+    /// Regex.Replace 不重扫替换串，故已内联的字面量不会被二次误伤（与命名参数解析一致的安全性）。
+    /// </summary>
+    private string BuildRemoteReadSql()
+    {
+        if (_parameters.Count == 0)
+            return _commandText;
+
+        var named = new Dictionary<string, QuackDbParameter>(StringComparer.OrdinalIgnoreCase);
+        var positional = new List<QuackDbParameter>(_parameters.Count);
+        foreach (QuackDbParameter parameter in _parameters)
+        {
+            if (string.IsNullOrWhiteSpace(parameter.ParameterName))
+                positional.Add(parameter);
+            else
+            {
+                foreach (var placeholder in GetPlaceholders(parameter.ParameterName))
+                    named[placeholder] = parameter;
+            }
+        }
+
+        var positionalIndex = 0;
+        return RemoteReadParamPattern.Replace(_commandText, match =>
+        {
+            if (match.Value == "?")
+            {
+                if (positionalIndex >= positional.Count)
+                    throw new InvalidOperationException("SQL 中的位置参数 '?' 多于已提供的参数。");
+                return FormatParameterValue(positional[positionalIndex++].Value);
+            }
+
+            return named.TryGetValue(match.Value, out var parameter)
+                ? FormatParameterValue(parameter.Value)
+                : match.Value;
+        });
+    }
+
+    /// <summary>
+    /// 判定是否为可远端执行的读查询（仅匹配明确读关键字）。命中才走 <see cref="QuackDataProvider.BuildAttachRemoteReadSql"/>，
+    /// DDL/DML/事务等仍走原生 ATTACH，避免误改写破坏写入语义。
+    /// </summary>
+    private static bool IsRemoteReadQuery(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return false;
+
+        var span = sql.AsSpan().TrimStart();
+        var end = 0;
+        while (end < span.Length && (char.IsLetter(span[end]) || span[end] == '_'))
+            end++;
+
+        if (end == 0)
+            return false;
+
+        var keyword = span[..end].ToString().ToUpperInvariant();
+        return keyword is "SELECT" or "WITH" or "VALUES" or "SHOW" or "DESCRIBE" or "DESC"
+            or "EXPLAIN" or "PRAGMA" or "TABLE" or "SUMMARIZE";
     }
 
     private static IEnumerable<string> GetPlaceholders(string parameterName)

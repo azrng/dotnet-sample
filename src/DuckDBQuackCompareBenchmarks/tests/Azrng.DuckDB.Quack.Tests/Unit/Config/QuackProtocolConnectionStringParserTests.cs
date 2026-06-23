@@ -59,8 +59,8 @@ public class QuackProtocolConnectionStringParserTests
         Assert.Equal("demo.example", config.Host);
         Assert.Equal(9494, config.Port);
         Assert.Equal("abc", config.Token);
-        Assert.False(config.DisableSsl);
-        Assert.Equal("https://demo.example:9494/quack", config.Endpoint.ToString());
+        Assert.True(config.DisableSsl);
+        Assert.Equal("http://demo.example:9494/quack", config.Endpoint.ToString());
     }
 
     /// <summary>
@@ -76,15 +76,15 @@ public class QuackProtocolConnectionStringParserTests
     }
 
     /// <summary>
-    /// Parse KeyValue DefaultsToTlsEnabled
+    /// Parse KeyValue DefaultsToSslDisabled
     /// </summary>
     [Fact]
-    public void Parse_KeyValue_DefaultsToTlsEnabled()
+    public void Parse_KeyValue_DefaultsToSslDisabled()
     {
         var config = QuackProtocolConnectionStringParser.Parse("Host=demo.example;Port=9494;Token=abc");
 
-        Assert.False(config.DisableSsl);
-        Assert.Equal("https://demo.example:9494/quack", config.Endpoint.ToString());
+        Assert.True(config.DisableSsl);
+        Assert.Equal("http://demo.example:9494/quack", config.Endpoint.ToString());
     }
 
     /// <summary>

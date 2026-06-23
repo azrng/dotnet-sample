@@ -86,15 +86,18 @@ public class QuackDuckDbConnectionTests
     }
 
     [Fact]
-    public void BuildQuackQuerySql_WithCatalog_UsesQuackQueryByName()
+    public void BuildQuackQuerySql_WithCatalog_UsesQuackQueryWithUse()
     {
+        // 远端不支持 quack_query_by_name（"does not refer to a RPC database"），
+        // 远端读统一走 quack_query(uri, 'USE "catalog"; <sql>', token, disable_ssl)。
         using var connection = new QuackDuckDbConnection(
             "Host=172.16.68.108;Port=9494;Token=abc;Catalog=test;Attach=false");
 
         var sql = connection.BuildQuackQuerySqlForTest("SELECT label FROM orders WHERE id = 7");
 
-        Assert.Contains("quack_query_by_name('test'", sql);
+        Assert.Contains("quack_query('quack://172.16.68.108:9494'", sql);
+        Assert.Contains("USE \"test\"", sql);
         Assert.Contains("SELECT label FROM orders WHERE id = 7", sql);
-        Assert.DoesNotContain("USE \"test\"", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("quack_query_by_name", sql);
     }
 }

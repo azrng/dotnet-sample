@@ -37,7 +37,12 @@ internal static class Program
             return;
         }
 
+        // 每次运行结果按"年月日时分秒"归档到独立目录，保留历史、避免覆盖。
+        var runArtifactsPath = Path.Combine("BenchmarkDotNet.Artifacts", $"run-{DateTime.Now:yyyyMMdd-HHmmss}");
+        Console.WriteLine($"Artifacts dir: {Path.GetFullPath(runArtifactsPath)}");
+
         var config = ManualConfig.CreateMinimumViable()
+            .WithArtifactsPath(runArtifactsPath)
             .AddLogger(BenchmarkDotNet.Loggers.ConsoleLogger.Default)
             .AddExporter(MarkdownExporter.GitHub)
             .AddExporter(JsonExporter.Default)

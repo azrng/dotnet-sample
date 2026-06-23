@@ -212,11 +212,21 @@ public sealed class QuackDataReader : DbDataReader
     /// <summary>获取当前行中指定列的布尔值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>布尔值。</returns>
-    public override bool GetBoolean(int ordinal) => Convert.ToBoolean(GetValue(ordinal));
+    public override bool GetBoolean(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetBoolean(ordinal, _cursor) : Convert.ToBoolean(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的字节值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>字节值。</returns>
-    public override byte GetByte(int ordinal) => Convert.ToByte(GetValue(ordinal));
+    public override byte GetByte(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetByte(ordinal, _cursor) : Convert.ToByte(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的字符值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>字符值。</returns>
@@ -244,11 +254,21 @@ public sealed class QuackDataReader : DbDataReader
     /// <summary>获取当前行中指定列的 16 位有符号整数值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>16 位有符号整数值。</returns>
-    public override short GetInt16(int ordinal) => Convert.ToInt16(GetValue(ordinal));
+    public override short GetInt16(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetInt16(ordinal, _cursor) : Convert.ToInt16(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的 32 位有符号整数值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>32 位有符号整数值。</returns>
-    public override int GetInt32(int ordinal) => Convert.ToInt32(GetValue(ordinal));
+    public override int GetInt32(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetInt32(ordinal, _cursor) : Convert.ToInt32(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的 64 位有符号整数值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>64 位有符号整数值。</returns>
@@ -261,11 +281,21 @@ public sealed class QuackDataReader : DbDataReader
     /// <summary>获取当前行中指定列的单精度浮点值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>单精度浮点值。</returns>
-    public override float GetFloat(int ordinal) => Convert.ToSingle(GetValue(ordinal));
+    public override float GetFloat(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetSingle(ordinal, _cursor) : Convert.ToSingle(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的双精度浮点值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>双精度浮点值。</returns>
-    public override double GetDouble(int ordinal) => Convert.ToDouble(GetValue(ordinal));
+    public override double GetDouble(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetDouble(ordinal, _cursor) : Convert.ToDouble(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的字符串值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>字符串值，null 值返回空字符串。</returns>
@@ -280,7 +310,12 @@ public sealed class QuackDataReader : DbDataReader
     /// <summary>获取当前行中指定列的十进制值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>十进制值。</returns>
-    public override decimal GetDecimal(int ordinal) => Convert.ToDecimal(GetValue(ordinal));
+    public override decimal GetDecimal(int ordinal)
+    {
+        ThrowIfClosed();
+        EnsureOnRow();
+        return _batch is not null ? _batch.GetDecimal(ordinal, _cursor) : Convert.ToDecimal(_rows[_cursor][ordinal]);
+    }
     /// <summary>获取当前行中指定列的日期时间值。</summary>
     /// <param name="ordinal">从零开始的列序号。</param>
     /// <returns>日期时间值。</returns>
