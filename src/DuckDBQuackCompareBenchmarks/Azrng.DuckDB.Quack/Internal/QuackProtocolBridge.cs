@@ -71,17 +71,20 @@ internal sealed class QuackProtocolBridge : IDisposable
 
         if (!string.IsNullOrEmpty(config.Catalog))
         {
-            // 确保 catalog 在服务端存在：先尝试 USE，失败则自动 ATTACH
-            var catalogName = EscapeIdentifier(config.Catalog);
+            // 确保 catalog 在服务端存在：先尝试 USE，失败则自动 ATTACH。
+            // catalog 已由 QuackProtocolConfig.Validate 做白名单校验（仅字母数字下划线），
+            // 这里仍分别按双引号/单引号上下文转义，保持防御深度。
+            var quotedCatalog = EscapeIdentifier(config.Catalog);
+            var literalCatalog = EscapeStringLiteral(config.Catalog);
             _logger.LogDebug("Ensuring catalog {Catalog} exists on server", config.Catalog);
             try
             {
-                await PrepareAndExecuteAsync(config, header.ConnectionId, $"USE \"{catalogName}\"", cancellationToken, skipCatalogUse: true);
+                await PrepareAndExecuteAsync(config, header.ConnectionId, $"USE \"{quotedCatalog}\"", cancellationToken, skipCatalogUse: true);
             }
             catch (QuackProtocolException ex) when (IsCatalogNotFound(ex.Message))
             {
                 _logger.LogInformation("Catalog {Catalog} not found, attaching", config.Catalog);
-                await PrepareAndExecuteAsync(config, header.ConnectionId, $"ATTACH '{catalogName}' AS \"{catalogName}\"", cancellationToken, skipCatalogUse: true);
+                await PrepareAndExecuteAsync(config, header.ConnectionId, $"ATTACH '{literalCatalog}' AS \"{quotedCatalog}\"", cancellationToken, skipCatalogUse: true);
             }
             _logger.LogInformation("Catalog {Catalog} ready", config.Catalog);
         }
@@ -1212,6 +1215,15 @@ internal sealed class QuackProtocolBridge : IDisposable
     private static string EscapeIdentifier(string identifier)
     {
         return identifier.Replace("\"", "\"\"");
+    }
+
+    /// <summary>
+    /// 单引号字符串字面量转义：SQL 标准用 '' 表示一个字面量单引号。
+    /// 用于 ATTACH '...' 这类被单引号包围的上下文（区别于双引号标识符上下文）。
+    /// </summary>
+    private static string EscapeStringLiteral(string value)
+    {
+        return value.Replace("'", "''");
     }
 
     /// <summary>

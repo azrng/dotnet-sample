@@ -71,6 +71,26 @@ public static class QuackProtocolConnectionStringParser
         return token;
     }
 
+    /// <summary>
+    /// 校验标识符安全性（仅允许字母数字下划线）。Catalog/别名会拼进 USE/ATTACH 语句，
+    /// 白名单比转义更稳健——杜绝引号注入。
+    /// </summary>
+    /// <param name="name">待校验的标识符。</param>
+    /// <returns>校验通过的原始标识符。</returns>
+    public static string ValidateIdentifier(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Identifier cannot be empty.", nameof(name));
+
+        foreach (var c in name)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_')
+                throw new ArgumentException($"Identifier contains an invalid character '{c}': {name}", nameof(name));
+        }
+
+        return name;
+    }
+
     private static QuackProtocolConfig ParseKeyValue(string connectionString)
     {
         var props = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

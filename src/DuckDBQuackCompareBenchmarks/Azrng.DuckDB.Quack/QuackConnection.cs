@@ -43,7 +43,7 @@ public sealed class QuackConnection : DbConnection
     /// </summary>
     /// <param name="connectionString">数据库连接字符串。</param>
     public QuackConnection(string connectionString)
-        : this(connectionString, () => new PureQuackProtocolBridge())
+        : this(connectionString, CreateBridgeFactory(QuackProtocolConfig.FromConnectionString(connectionString)))
     {
     }
 
@@ -52,7 +52,7 @@ public sealed class QuackConnection : DbConnection
     /// </summary>
     /// <param name="config">协议连接配置。</param>
     public QuackConnection(QuackProtocolConfig config)
-        : this(config, () => new PureQuackProtocolBridge())
+        : this(config, CreateBridgeFactory(config))
     {
     }
 
@@ -76,6 +76,18 @@ public sealed class QuackConnection : DbConnection
         config.Validate();
         _config = config;
         _bridgeFactory = bridgeFactory;
+    }
+
+    /// <summary>
+    /// 根据配置创建默认的 PureQuackProtocolBridge 工厂，把 <see cref="QuackProtocolConfig.TimeoutSeconds"/>
+    /// 透传给 bridge。此前 bridge 无参构造、配置的超时对实际请求完全无效（隐蔽 bug）。
+    /// 仅在超时与默认 30s 不同时传入，使默认路径仍可复用进程级共享 HttpClient 连接池。
+    /// </summary>
+    private static Func<IQuackProtocolBridge> CreateBridgeFactory(QuackProtocolConfig config)
+    {
+        var timeout = TimeSpan.FromSeconds(config.TimeoutSeconds);
+        var useDefaultTimeout = timeout == TimeSpan.FromSeconds(30);
+        return () => new PureQuackProtocolBridge(timeout: useDefaultTimeout ? null : timeout);
     }
 
     /// <summary>获取协议桥接器实例。连接未打开时抛出异常。</summary>

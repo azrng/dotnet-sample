@@ -66,6 +66,11 @@ public sealed record QuackProtocolConfig
         QuackProtocolConnectionStringParser.ValidatePort(Port);
         QuackProtocolConnectionStringParser.ValidateToken(Token);
 
+        // Catalog 会被拼进 USE "..." 与 ATTACH '...' 发往服务端，必须做白名单校验，
+        // 否则含 ' 或 " 的 catalog 名会破坏 SQL 字面量（注入风险）。
+        if (!string.IsNullOrWhiteSpace(Catalog))
+            QuackProtocolConnectionStringParser.ValidateIdentifier(Catalog);
+
         if (TimeoutSeconds < 0)
             throw new ArgumentOutOfRangeException(nameof(TimeoutSeconds), TimeoutSeconds, "TimeoutSeconds cannot be negative.");
     }

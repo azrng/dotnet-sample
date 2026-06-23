@@ -517,41 +517,55 @@ internal sealed class QuackDbParameterCollection : DbParameterCollection
 
     public override int Add(object value)
     {
-        _parameters.Add((QuackDbParameter)value);
+        _parameters.Add(AsQuackParameter(value));
         return _parameters.Count - 1;
     }
 
     public override void AddRange(Array values)
     {
-        foreach (QuackDbParameter parameter in values)
-            _parameters.Add(parameter);
+        foreach (object? parameter in values)
+            _parameters.Add(AsQuackParameter(parameter));
     }
 
     public override void Clear() => _parameters.Clear();
-    public override bool Contains(object value) => _parameters.Contains((QuackDbParameter)value);
+    public override bool Contains(object value) => _parameters.Contains(AsQuackParameter(value));
     public override bool Contains(string value) => _parameters.Any(p => p.ParameterName == value);
     public override void CopyTo(Array array, int index) => ((System.Collections.ICollection)_parameters).CopyTo(array, index);
     public override System.Collections.IEnumerator GetEnumerator() => _parameters.GetEnumerator();
-    public override int IndexOf(object value) => _parameters.IndexOf((QuackDbParameter)value);
+    public override int IndexOf(object value) => _parameters.IndexOf(AsQuackParameter(value));
     public override int IndexOf(string parameterName) => _parameters.FindIndex(p => p.ParameterName == parameterName);
-    public override void Insert(int index, object value) => _parameters.Insert(index, (QuackDbParameter)value);
-    public override void Remove(object value) => _parameters.Remove((QuackDbParameter)value);
+    public override void Insert(int index, object value) => _parameters.Insert(index, AsQuackParameter(value));
+    public override void Remove(object value) => _parameters.Remove(AsQuackParameter(value));
     public override void RemoveAt(int index) => _parameters.RemoveAt(index);
     public override void RemoveAt(string parameterName) => _parameters.RemoveAll(p => p.ParameterName == parameterName);
     protected override DbParameter GetParameter(int index) => _parameters[index];
     protected override DbParameter GetParameter(string parameterName) => _parameters.First(p => p.ParameterName == parameterName);
-    protected override void SetParameter(int index, DbParameter value) => _parameters[index] = (QuackDbParameter)value;
+    protected override void SetParameter(int index, DbParameter value) => _parameters[index] = AsQuackParameter(value);
 
     protected override void SetParameter(string parameterName, DbParameter value)
     {
         var index = IndexOf(parameterName);
+        var parameter = AsQuackParameter(value);
         if (index >= 0)
         {
-            _parameters[index] = (QuackDbParameter)value;
+            _parameters[index] = parameter;
         }
         else
         {
-            _parameters.Add((QuackDbParameter)value);
+            _parameters.Add(parameter);
         }
+    }
+
+    /// <summary>
+    /// 校验并返回 <see cref="QuackDbParameter"/>。直接强转会抛 <see cref="InvalidCastException"/>，
+    /// 这里在传入非预期类型时给出可定位原因的异常（典型场景：调用方误传其它 <see cref="DbParameter"/> 子类型）。
+    /// </summary>
+    private static QuackDbParameter AsQuackParameter(object? value)
+    {
+        return value as QuackDbParameter
+            ?? throw new InvalidCastException(
+                value is null
+                    ? "Parameter value cannot be null."
+                    : $"Expected QuackDbParameter, got {value.GetType().FullName}. Use command.CreateParameter() to create one.");
     }
 }

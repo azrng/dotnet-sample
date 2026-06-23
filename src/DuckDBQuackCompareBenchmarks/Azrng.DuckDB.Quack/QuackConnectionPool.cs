@@ -18,6 +18,7 @@ public sealed class QuackConnectionPool : IAsyncDisposable, IDisposable
     private readonly ILogger<QuackConnectionPool> _logger;
     private readonly int _maxPoolSize;
     private readonly TimeSpan _connectionLifetime;
+    private readonly TimeSpan? _idleTimeout;
     private readonly SemaphoreSlim _semaphore;
     private int _nextId;
     private bool _disposed;
@@ -29,16 +30,22 @@ public sealed class QuackConnectionPool : IAsyncDisposable, IDisposable
     /// <param name="logger">可选的日志记录器，为 null 时使用空日志实现。</param>
     /// <param name="maxPoolSize">连接池允许的最大连接数，默认为 10。</param>
     /// <param name="connectionLifetime">连接的最大生存时间，超过后将被丢弃，默认为 5 分钟。</param>
+    /// <param name="idleTimeout">
+    /// 连接的最大空闲时间（自上次使用起），超过后从池中淘汰，默认为 1 分钟。
+    /// 传 <c>null</c> 可禁用空闲淘汰，仅按 <paramref name="connectionLifetime"/> 控制；适用于低 QPS 场景下希望连接长期复用的情形。
+    /// </param>
     public QuackConnectionPool(
         string connectionString,
         ILogger<QuackConnectionPool>? logger = null,
         int maxPoolSize = 10,
-        TimeSpan? connectionLifetime = null)
+        TimeSpan? connectionLifetime = null,
+        TimeSpan? idleTimeout = null)
     {
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _logger = logger ?? NullLogger<QuackConnectionPool>.Instance;
         _maxPoolSize = maxPoolSize;
         _connectionLifetime = connectionLifetime ?? TimeSpan.FromMinutes(5);
+        _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(1);
         _semaphore = new SemaphoreSlim(maxPoolSize, maxPoolSize);
     }
 
@@ -208,7 +215,9 @@ public sealed class QuackConnectionPool : IAsyncDisposable, IDisposable
         if (DateTimeOffset.UtcNow - pooled.CreatedAt > _connectionLifetime)
             return false;
 
-        if (DateTimeOffset.UtcNow - pooled.LastUsedAt > TimeSpan.FromMinutes(1))
+        // 双重淘汰：连接绝对寿命（connectionLifetime）之上再叠加空闲淘汰（idleTimeout）。
+        // idleTimeout 为 null 时仅按绝对寿命淘汰，便于低 QPS 场景长期复用连接。
+        if (_idleTimeout is { } idle && DateTimeOffset.UtcNow - pooled.LastUsedAt > idle)
             return false;
 
         return true;
