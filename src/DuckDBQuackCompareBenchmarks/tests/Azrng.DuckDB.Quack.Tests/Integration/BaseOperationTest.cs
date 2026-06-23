@@ -33,10 +33,10 @@ public sealed class BaseOperationTest
         Assert.Equal(1L, await CountAsync(connection,
             $"SELECT count(*) FROM duckdb_databases() WHERE database_name = '{catalog}'"));
 
-        // 2. 建 schema
+        // 2. 建 schema(限定到当前 catalog 计数,避免命中历史 catalog 残留的同名 schema)
         await connection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS demo");
         Assert.Equal(1L, await CountAsync(connection,
-            "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'demo'"));
+            $"SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'demo' AND catalog_name = '{catalog}'"));
 
         // 3. 建表
         await connection.ExecuteAsync(
@@ -94,15 +94,15 @@ public sealed class BaseOperationTest
         Assert.Equal(2L, await CountAsync(connection, "SELECT count(*) FROM demo.record"));
         Assert.Equal(0L, await CountAsync(connection, "SELECT count(*) FROM demo.record WHERE id = 2"));
 
-        // 9. 删表
+        // 9. 删表(限定到当前 catalog 计数)
         await connection.ExecuteAsync("DROP TABLE IF EXISTS demo.record");
         Assert.Equal(0L, await CountAsync(connection,
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'demo' AND table_name = 'record'"));
+            $"SELECT count(*) FROM information_schema.tables WHERE table_schema = 'demo' AND table_name = 'record' AND table_catalog = '{catalog}'"));
 
         // 10. 删 schema
         await connection.ExecuteAsync("DROP SCHEMA IF EXISTS demo");
         Assert.Equal(0L, await CountAsync(connection,
-            "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'demo'"));
+            $"SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'demo' AND catalog_name = '{catalog}'"));
 
         // 11. 删库:DuckDB 无 DROP DATABASE,用 DETACH 从会话卸载 catalog。
         //     使用不指定 Catalog 的连接执行 DETACH，避免删除当前默认数据库的错误。

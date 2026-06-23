@@ -232,7 +232,7 @@ public sealed class PureQuackProtocolBridge : IQuackProtocolBridge
             "HUGEINT" => typeof(long),
             "FLOAT" or "DOUBLE" or "REAL" => typeof(double),
             var t when t.StartsWith("DECIMAL", StringComparison.Ordinal) => typeof(decimal),
-            "DATE" or "TIME" or "TIMESTAMP" or "TIMESTAMP_TZ" => typeof(DateTime),
+            "DATE" or "TIME" or "TIMESTAMP" or "TIMESTAMP_TZ" or "TIMESTAMP_SEC" or "TIMESTAMP_MS" or "TIMESTAMP_NS" => typeof(DateTime),
             _ => typeof(string)
         };
     }

@@ -701,6 +701,9 @@ internal sealed class QuackProtocolBridge : IDisposable
             "DECIMAL" => (QuackColumnKind.Decimal, ReadDecimalVector(ref reader, rowCount, ExtractScale(columnType))),
             "UUID" => (QuackColumnKind.Guid, ReadUuidVector(ref reader, rowCount)),
             "TIMESTAMP" or "TIMESTAMP_TZ" => (QuackColumnKind.DateTime, ReadTimestampVector(ref reader, rowCount)),
+            "TIMESTAMP_SEC" => (QuackColumnKind.DateTime, ReadTimestampVector(ref reader, rowCount, TimestampUnit.Second)),
+            "TIMESTAMP_MS" => (QuackColumnKind.DateTime, ReadTimestampVector(ref reader, rowCount, TimestampUnit.Millisecond)),
+            "TIMESTAMP_NS" => (QuackColumnKind.DateTime, ReadTimestampVector(ref reader, rowCount, TimestampUnit.Nanosecond)),
             "DATE" => (QuackColumnKind.Date, ReadDateVector(ref reader, rowCount)),
             _ => SkipUnknownVectorData(ref reader),
         };
@@ -860,18 +863,58 @@ internal sealed class QuackProtocolBridge : IDisposable
         return data;
     }
 
+    /// <summary>
+    /// DuckDB 时间戳的存储精度。所有精度变体在 wire 上都是 8 字节有符号整数,
+    /// 差别仅在物理值的单位(秒/毫秒/微秒/纳秒)。此处用于 <see cref="ReadTimestampVector"/> 换算。
+    /// </summary>
+    private enum TimestampUnit : byte
+    {
+        /// <summary>TIMESTAMP_SEC(TIMESTAMP_S):整数 = 自 epoch 的秒数。</summary>
+        Second,
+        /// <summary>TIMESTAMP_MS(TIMESTAMP_MS):整数 = 自 epoch 的毫秒数。</summary>
+        Millisecond,
+        /// <summary>TIMESTAMP / TIMESTAMP_TZ:整数 = 自 epoch 的微秒数(默认精度)。</summary>
+        Microsecond,
+        /// <summary>TIMESTAMP_NS(TIMESTAMP_NS):整数 = 自 epoch 的纳秒数。</summary>
+        Nanosecond,
+    }
+
     private static DateTime[] ReadTimestampVector(ref QuackBinaryReader reader, int rowCount)
+        => ReadTimestampVector(ref reader, rowCount, TimestampUnit.Microsecond);
+
+    /// <summary>
+    /// 解码 DuckDB 时间戳列。所有精度变体物理布局相同(8 字节 LE 有符号整数),
+    /// 仅单位不同,统一换算到 ticks 后构造 <see cref="DateTime"/>。
+    /// NULL 行的物理值是 <see cref="long.MinValue"/> 哨兵(0x8000000000000000),
+    /// 直接换算会溢出,这里保留 default(DateTime),由列的 validity 位图在 GetValue/IsNull 阶段判定为 null。
+    /// </summary>
+    private static DateTime[] ReadTimestampVector(ref QuackBinaryReader reader, int rowCount, TimestampUnit unit)
     {
         var length = (int)reader.ReadVarUInt();
         var bytes = reader.ReadBytes(length);
         var count = Math.Min(rowCount, length / 8);
         var data = new DateTime[rowCount];
+        // 自 0001-01-01(epoch 之前)的 ticks。DuckDB 的整数为自 1970-01-01 的单位数。
+        const long epochTicks = 621355968000000000L;
         for (int i = 0; i < count; i++)
         {
-            var micros = BinaryPrimitives.ReadInt64LittleEndian(bytes.Span[(i * 8)..]);
-            data[i] = DateTimeOffset.FromUnixTimeMilliseconds(micros / 1000)
-                .AddTicks((micros % 1000) * TimeSpan.TicksPerMillisecond / 1000)
-                .UtcDateTime;
+            var raw = BinaryPrimitives.ReadInt64LittleEndian(bytes.Span[(i * 8)..]);
+            if (raw == long.MinValue)
+                continue;
+
+            // 将各单位的整数换算为 ticks(自 epoch)。
+            long ticks = unit switch
+            {
+                TimestampUnit.Second => raw * TimeSpan.TicksPerSecond,
+                TimestampUnit.Millisecond => raw * TimeSpan.TicksPerMillisecond,
+                TimestampUnit.Microsecond => raw * (TimeSpan.TicksPerMillisecond / 1000), // 10 ticks/μs
+                // 1 tick = 100ns。raw 是纳秒,ticks = raw / 100,余数(0..99ns)丢弃。
+                // .NET DateTime 精度上限即 100ns,亚 100ns 部分无法表达——这是 DateTime 的固有约束,
+                // 非桥接 bug;与 μs→ms 路径的整数截断处理一致。
+                TimestampUnit.Nanosecond => raw / 100,
+                _ => throw new InvalidOperationException($"Unsupported timestamp unit: {unit}")
+            };
+            data[i] = new DateTime(epochTicks + ticks, DateTimeKind.Utc);
         }
         return data;
     }
@@ -913,7 +956,15 @@ internal sealed class QuackProtocolBridge : IDisposable
         var count = Math.Min(rowCount, length / 4);
         var data = new DateOnly[rowCount];
         for (int i = 0; i < count; i++)
-            data[i] = DateOnly.FromDayNumber(BinaryPrimitives.ReadInt32LittleEndian(bytes.Span[(i * 4)..]) + 719162);
+        {
+            var days = BinaryPrimitives.ReadInt32LittleEndian(bytes.Span[(i * 4)..]);
+            // NULL 行的物理值是 Int32.MinValue 哨兵(0x80000000);若 +719162 后交给
+            // DateOnly.FromDayNumber 会溢出。这里保留 default(DateOnly),由列的 validity
+            // 位图在 GetValue/IsNull 阶段判定为 null(与其它值类型列一致的约定)。
+            if (days == int.MinValue)
+                continue;
+            data[i] = DateOnly.FromDayNumber(days + 719162);
+        }
         return data;
     }
 

@@ -52,15 +52,21 @@
 
 ### 1.2 数据类型支持 (T020-T030)
 
+读回能力按 bridge 的 `ReadVectorData` 解码器判定;未覆盖类型走跳过路径返回空(DDL/DML 仍可用,详见 [README 支持的数据类型](./README.md#支持的数据类型))。
+
 | ID | 任务 | 状态 | 说明 |
 |---|---|---|---|
 | T020 | 支持基础类型 | Done | INT, BIGINT, VARCHAR, BOOLEAN, FLOAT, DOUBLE |
-| T021 | 支持 DECIMAL 类型 | Done | 精确数值计算 |
-| T022 | 支持 UUID 类型 | Done | 128 位唯一标识符 |
-| T023 | 支持时间类型 | Done | TIMESTAMP, DATE, TIME |
-| T024 | 支持 BLOB 类型 | Done | 二进制大对象 |
-| T025 | 支持 NULL 值 | Done | 空值处理 |
-| T026 | 支持 HUGEINT 类型 | Done | 128 位整数 |
+| T021 | 支持 DECIMAL 类型 | Done | 精确数值计算,按 scale 还原定点数 |
+| T022 | 支持 UUID 类型 | Done | 128 位唯一标识符,字节序按 hugeint 存储还原 RFC 4122 |
+| T023 | 支持时间类型 | Done | TIMESTAMP, DATE, TIMESTAMPTZ(均返回 UTC `DateTime`/`DateOnly`) |
+| T024 | 支持 BLOB 类型 | Done | 二进制大对象,返回 `byte[]` |
+| T025 | 支持 NULL 值 | Done | 列 validity 位图判定;`GetValue`/`IsDBNull` 透明处理 |
+| T026 | 支持 HUGEINT 类型 | Done | 128 位整数,落 `long` 范围返回 `long`,溢出返回 `decimal` |
+| T027 | 支持时间戳精度变体 | Done | **1.0.0-beta3**:TIMESTAMP_S/MS/NS 三精度变体,按秒/毫秒/纳秒换算 ticks |
+| T028 | 支持 TIME / INTERVAL / BIT | Pending | DDL/DML 可用,读回解码器未覆盖(可 `CAST` 成 VARCHAR 绕过) |
+| T029 | 支持无符号整型 | Pending | UTINYINT/USMALLINT/UINTEGER/UBIGINT,同上 |
+| T030 | 支持嵌套类型 | Pending | ARRAY/LIST/MAP/STRUCT/UNION/VARIANT;ENUM 需 CREATE TYPE;JSON 需扩展 |
 
 ### 1.3 查询功能 (T031-T040)
 
@@ -119,14 +125,15 @@
 
 | 类别 | 数量 |
 |------|------|
-| 单元测试 | 194 |
-| 集成测试 | 90 |
-| **总计** | **284** |
+| 单元测试 | 215 |
+| 集成测试 | 93 |
+| **总计** | **308** |
 
 ### 集成测试覆盖
 
 | 测试类 | 测试数 | 覆盖功能 |
 |--------|--------|----------|
+| AllTypesTest | 3 | 全可读类型往返 + 仅可写类型持久化 + 时间戳精度变体(1.0.0-beta3 新增) |
 | BaseOperationTest | 1 | 基础操作全流程 |
 | BatchOperationTests | 6 | 批量插入操作 |
 | ConcurrentConnectionIntegrationTests | 2 | 并发连接 |
@@ -141,6 +148,8 @@
 | SchemaAndBehaviorIntegrationTests | 6 | Schema 和行为 |
 | SqlFeatureIntegrationTests | 8 | SQL 功能 |
 | TransactionTests | 6 | 事务 |
+
+> 上表"测试数"为各测试类的方法数;因集成测试串行执行(`[Collection(IntegrationTestCollection)]`),实际运行时按类汇总。个别类的数字可能随后续增补微调。
 
 ---
 
@@ -200,6 +209,8 @@ dotnet build src\Azrng.DuckDB.Quack\Azrng.DuckDB.Quack.csproj
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.0-beta3 | 2026-06-23 | 新增 TIMESTAMP_S/MS/NS 精度变体解码(T027);修复全 NULL 的 DATE/TIMESTAMP 列读取崩溃(NULL 哨兵溢出);新增 `AllTypesTest` 全类型集成测试;数据类型表更正为实际支持的完整集合 |
+| v1.0.0-beta2 | 2026-06-22 | 修复大结果集 Fetch 续读 `result_uuid` 非规范 LEB128 重编码导致的 `Result has been closed`;`FetchToken` 优先回放服务端 UUID wire bytes;修复 `DATE` 解码偏移;补充 100000 行大结果集等回归测试 |
+| v1.0.0-beta1 | 2026-06-20 | 初始预览版本,核心协议实现 + 企业级功能(连接池/事务/批量/Token 加密) |
 | v1.0.0 | 2026-06-20 | 初始版本，核心协议实现 |
 | - | - | 企业级功能完成 |
-| - | - | 测试覆盖率 284 个测试 |

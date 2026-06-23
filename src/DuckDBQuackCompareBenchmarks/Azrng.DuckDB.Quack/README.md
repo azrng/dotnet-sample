@@ -2,7 +2,7 @@
 
 纯 C# 实现的 DuckDB Quack 协议 ADO.NET 提供程序，无需 native DLL 依赖。
 
-> 当前版本：**1.0.0-beta2**。本版本重点修复大结果集 Fetch 续读、DATE 解码和 benchmark 回归场景。
+> 当前版本：**1.0.0-beta3**。本版本补齐 TIMESTAMP_S/MS/NS 精度变体解码,修复全 NULL 的 DATE/TIMESTAMP 列读取崩溃,并扩展全类型集成测试覆盖。
 
 ## 项目背景
 
@@ -112,17 +112,41 @@ var orders = await connection.QueryAsync<Order>(
 
 ## 支持的数据类型
 
-| DuckDB 类型 | .NET 类型 |
-|-------------|-----------|
-| BOOLEAN | `bool` |
-| TINYINT, SMALLINT, INTEGER, BIGINT | `long` |
-| HUGEINT | `long` / `decimal` |
-| FLOAT, DOUBLE | `double` |
-| DECIMAL | `decimal` |
-| VARCHAR, CHAR, BLOB | `string` |
-| DATE | `DateOnly` |
-| TIMESTAMP | `DateTimeOffset` |
-| UUID | `Guid` |
+读回(经 `QuackDataReader`/Dapper 返回)按列的 DuckDB 逻辑类型分发到下表对应的 .NET 类型。NULL 由列的 validity 位图判定,`GetValue`/`IsDBNull` 透明处理。
+
+### 可读回(完整往返)
+
+| DuckDB 类型 | .NET 类型 | 备注 |
+|-------------|-----------|------|
+| BOOLEAN | `bool` | |
+| TINYINT, SMALLINT, INTEGER | `long` | 窄整型经 `Convert` 也可作 `int`/`short`/`byte` 读 |
+| BIGINT | `long` | |
+| HUGEINT | `long` / `decimal` | 落在 `long` 范围返回 `long`,溢出时返回 `decimal` |
+| FLOAT | `float` | |
+| DOUBLE | `double` | |
+| DECIMAL(p,s) | `decimal` | 按 scale 还原定点数 |
+| VARCHAR, CHAR | `string` | |
+| BLOB | `byte[]` | |
+| UUID | `Guid` | 字节序按 DuckDB 128 位 hugeint 存储还原为 RFC 4122 |
+| DATE | `DateOnly` | |
+| TIMESTAMP / TIMESTAMPTZ | `DateTime` | 返回 UTC `DateTime`;TIMESTAMPTZ 渲染时归一化为 UTC |
+| TIMESTAMP_S | `DateTime` | 秒精度(整数 = 自 epoch 的秒数) |
+| TIMESTAMP_MS | `DateTime` | 毫秒精度 |
+| TIMESTAMP_NS | `DateTime` | 纳秒精度,解码按 `纳秒/100 = ticks`。**`.NET DateTime` 精度上限是 100ns(1 tick),亚 100ns 部分必然丢失**——这是 `DateTime`/`DateTimeOffset` 的固有约束(后者内部也是 `DateTime`),非桥接 bug。如需完整纳秒精度需改返回 `long` 或自定义纳秒类型,属破坏性改动。 |
+
+> 参数化写入侧(`QuackParameter`)额外支持 `DateOnly`/`TimeOnly`/`DateTimeOffset` 的字面量渲染,但 `TIME` 类型目前**仅能写入、无法读回**(读侧解码器未覆盖)。
+
+### 仅可写入(DDL/DML 正常,读回返回空)
+
+下列类型建表、插入、`SELECT count(*)` 均正常工作,但 `QuackDataReader` 暂不支持逐列读回(走跳过路径返回空数组)。若需读回,可先在 SQL 里 `CAST` 成上表的类型(如 `CAST(c_time AS VARCHAR)`)。
+
+| DuckDB 类型 | 现状 |
+|-------------|------|
+| TIME, INTERVAL, BIT | DDL/DML 可用,不可逐列读回 |
+| UTINYINT, USMALLINT, UINTEGER, UBIGINT | 同上 |
+| ARRAY, LIST, MAP, STRUCT, UNION, VARIANT | 嵌套类型,不可读回 |
+| ENUM | 需 `CREATE TYPE`,不可读回 |
+| JSON | 需加载扩展,不可读回 |
 
 ## 企业级功能
 
@@ -188,9 +212,9 @@ await connection.ExecuteAsync("DELETE FROM users WHERE id = 2");
 
 | 类别 | 数量 |
 |------|------|
-| 单元测试 | 194 |
-| 集成测试 | 90 |
-| **总计** | **284** |
+| 单元测试 | 215 |
+| 集成测试 | 93 |
+| **总计** | **308** |
 
 运行测试：
 
@@ -205,6 +229,13 @@ dotnet test tests\Azrng.DuckDB.Quack.Tests\Azrng.DuckDB.Quack.Tests.csproj
 - **协议文档**: https://duckdb.org/docs/current/quack/overview
 
 ## 版本历史
+
+### 1.0.0-beta3
+
+- **新增 TIMESTAMP_S / TIMESTAMP_MS / TIMESTAMP_NS 精度变体解码**：此前仅解码 `TIMESTAMP`/`TIMESTAMPTZ`(微秒),三个精度变体读回静默返回空。统一解码按各自单位(秒/毫秒/纳秒)换算到 ticks。
+- **修复全 NULL 的 DATE / TIMESTAMP 列读取崩溃**：NULL 单元格的物理值是 `0x80..0` 哨兵(`Int32.MinValue`/`Int64.MinValue`),原 `ReadDateVector`/`ReadTimestampVector` 直接换算会让 `DateOnly.FromDayNumber`/`DateTime` 构造溢出抛 `ArgumentOutOfRangeException`。改为识别哨兵保留默认值,由列的 validity 位图判定为 null。
+- 新增 `AllTypesTest` 集成测试:全可读类型完整生命周期往返 + 仅可写类型 DDL/DML 持久化 + 时间戳精度变体往返与 NULL 回归。
+- 修正 `ReadVectorData`/`MapType` 对时间戳变体的覆盖,数据类型表更新为实际支持的完整集合。
 
 ### 1.0.0-beta2
 
