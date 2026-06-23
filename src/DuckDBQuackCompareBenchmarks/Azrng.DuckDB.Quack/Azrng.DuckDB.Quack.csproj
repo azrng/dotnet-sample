@@ -8,7 +8,7 @@
         <Description>基于 DuckDB HTTP 查询接口的纯托管 .NET 客户端，支持参数化查询、批量插入、事务管理、连接池和 Dapper 集成。</Description>
         <Authors>Azrng</Authors>
         <Company>Azrng</Company>
-        <Version>1.0.0-beta2</Version>
+        <Version>1.0.0-beta3</Version>
         <PackageId>Azrng.DuckDB.Quack</PackageId>
         <Copyright>Azrng</Copyright>
         <NoWarn>1701;1702;1591</NoWarn>
