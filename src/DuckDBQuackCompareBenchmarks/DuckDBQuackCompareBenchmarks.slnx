@@ -6,5 +6,6 @@
   </Folder>
   <Project Path="Azrng.DuckDB.Data.Quack/Azrng.DuckDB.Data.Quack.csproj" />
   <Project Path="Azrng.DuckDB.Quack/Azrng.DuckDB.Quack.csproj" />
+  <Project Path="DuckDbConsoleApp/DuckDbConsoleApp.csproj" />
   <Project Path="DuckDBExtensionDownloader\DuckDBExtensionDownloader.csproj" />
 </Solution>
